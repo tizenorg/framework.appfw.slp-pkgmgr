@@ -1,0 +1,6 @@
+[Unit]
+Description=SLP Package Manager
+
+[Service]
+BusName=com.samsung.slp.pkgmgr
+ExecStart=/usr/bin/pkgmgr-server

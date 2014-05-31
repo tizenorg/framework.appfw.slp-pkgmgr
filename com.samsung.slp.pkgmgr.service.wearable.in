@@ -1,0 +1,5 @@
+[D-BUS Service]
+Name=com.samsung.slp.pkgmgr
+Exec=/bin/false
+SystemdService=slp-pkgmgr.service
+User=root
