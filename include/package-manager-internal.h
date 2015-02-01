@@ -32,6 +32,21 @@
 
 #include "package-manager-plugin.h"
 
+#ifndef API
+#define API __attribute__ ((visibility("default")))
+#endif
+
+#define PKG_BACKEND		"backend:"
+#define PKG_BACKENDLIB	"backendlib:"
+#define PKG_CONF_PATH	"/usr/etc/package-manager/pkg_path.conf"
+#define PKG_DATA_PATH	"/opt/usr/data/pkgmgr"
+
+#define PKG_STATUS		"STATUS"
+
+#define PKG_STRING_LEN_MAX 1024
+#define PKG_EXT_LEN_MAX		 20
+#define PKG_ARGC_MAX		 16
+
 typedef package_manager_pkg_info_t package_manager_app_info_t;
 
 
@@ -57,22 +72,13 @@ time_t _get_info_time(const char *key,
 		      const package_manager_pkg_detail_info_t *
 		      pkg_detail_info);
 
-
-#define PKG_BACKEND		"backend:"
-#define PKG_BACKENDLIB	"backendlib:"
-#define PKG_CONF_PATH	"/usr/etc/package-manager/pkg_path.conf"
-
-#define PKG_STATUS		"STATUS"
-
-#define PKG_STRING_LEN_MAX 1024
-#define PKG_EXT_LEN_MAX		 20
-#define PKG_ARGC_MAX		 16
-
 void _app_str_trim(char *input);
 char *_get_backend_path(const char *input_path);
 char *_get_backend_path_with_type(const char *type);
 
 int _get_mime_from_file(const char *filename, char *mimetype, int len);
 int _get_mime_extension(const char *mimetype, char *ext, int len);
+
+char *_get_type_from_zip(const char *zip_name);
 
 #endif				/* __PKG_MANAGER_INTERNAL_H__ */

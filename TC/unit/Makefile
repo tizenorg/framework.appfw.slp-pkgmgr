@@ -13,7 +13,6 @@ TARGETS = utc_ApplicationFW_pkgmgr_client_activate_func \
 	utc_ApplicationFW_pkgmgr_get_pkg_list_func \
 	utc_ApplicationFW_pkgmgr_info_free_func \
 	utc_ApplicationFW_pkgmgr_info_get_string_func \
-	utc_ApplicationFW_pkgmgr_info_new_from_file_func \
 	utc_ApplicationFW_pkgmgr_info_new_func \
 	utc_ApplicationFW_pkgmgr_installer_free_func \
 	utc_ApplicationFW_pkgmgr_installer_get_license_path_func \

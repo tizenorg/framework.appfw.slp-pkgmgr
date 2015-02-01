@@ -12,5 +12,8 @@
 			<arg type="s" name="cookie" direction="in" />
 			<arg type="i" name="ret" direction="out" />
 		</method>
+		<method name="CreateExternalDirectory">
+			<arg type="i" name="ret" direction="out" />
+		</method>
 	</interface>
 </node>

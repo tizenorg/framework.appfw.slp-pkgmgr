@@ -64,6 +64,10 @@ static char *__get_prifix(int status_type)
 			prifix = COMM_STATUS_BROADCAST_DBUS_GET_SIZE_SERVICE_PREFIX;
 			break;
 
+		case COMM_STATUS_BROADCAST_GET_JUNK_INFO:
+			prifix = COMM_STATUS_BROADCAST_DBUS_GET_JUNK_INFO_SERVICE_PREFIX;
+			break;
+
 		default:
 			prifix = NULL;
 	}
@@ -101,6 +105,10 @@ static char *__get_path(int status_type)
 
 		case COMM_STATUS_BROADCAST_GET_SIZE:
 			path = COMM_STATUS_BROADCAST_DBUS_GET_SIZE_PATH;
+			break;
+
+		case COMM_STATUS_BROADCAST_GET_JUNK_INFO:
+			path = COMM_STATUS_BROADCAST_DBUS_GET_JUNK_INFO_PATH;
 			break;
 
 		default:
@@ -142,6 +150,10 @@ static char *__get_interface(int status_type)
 			interface = COMM_STATUS_BROADCAST_DBUS_GET_SIZE_INTERFACE;
 			break;
 
+		case COMM_STATUS_BROADCAST_GET_JUNK_INFO:
+			interface = COMM_STATUS_BROADCAST_DBUS_GET_JUNK_INFO_INTERFACE;
+			break;
+
 		default:
 			interface = NULL;
 	}
@@ -179,6 +191,10 @@ static char *__get_name(int status_type)
 
 		case COMM_STATUS_BROADCAST_GET_SIZE:
 			name = COMM_STATUS_BROADCAST_EVENT_GET_SIZE;
+			break;
+
+		case COMM_STATUS_BROADCAST_GET_JUNK_INFO:
+			name = COMM_STATUS_BROADCAST_EVENT_GET_JUNK_INFO;
 			break;
 
 		default:

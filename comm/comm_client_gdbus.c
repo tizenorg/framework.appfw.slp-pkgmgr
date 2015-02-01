@@ -77,7 +77,7 @@ static int __retry_request(comm_client *cc,
 	}
 
 	rc = com_samsung_slp_pkgmgr_call_request_sync(proxy,
-			req_id, req_type, pkg_type, pkgid, args, cookie, &ret, NULL, &error);
+			req_id, req_type, pkg_type, pkgid, args, cookie, ret, NULL, &error);
 	if (!rc) {
 		ERR("Failed to send request[rc=%d, err=%s]\n", rc, error->message);
 		return FALSE;
@@ -118,6 +118,10 @@ static char *__get_interface(int status_type)
 			ifc = COMM_STATUS_BROADCAST_DBUS_GET_SIZE_INTERFACE;
 			break;
 
+		case COMM_STATUS_BROADCAST_GET_JUNK_INFO:
+			ifc = COMM_STATUS_BROADCAST_DBUS_GET_JUNK_INFO_INTERFACE;
+			break;
+
 		default:
 			break;
 	}
@@ -142,6 +146,7 @@ void _on_signal_handle_filter(GDBusConnection *conn,
 		strcmp(interface_name, COMM_STATUS_BROADCAST_DBUS_UPGRADE_INTERFACE) &&
 		strcmp(interface_name, COMM_STATUS_BROADCAST_DBUS_MOVE_INTERFACE) &&
 		strcmp(interface_name, COMM_STATUS_BROADCAST_DBUS_GET_SIZE_INTERFACE) &&
+		strcmp(interface_name, COMM_STATUS_BROADCAST_DBUS_GET_JUNK_INFO_INTERFACE) &&
 		strcmp(interface_name, COMM_STATUS_BROADCAST_DBUS_INSTALL_PROGRESS_INTERFACE)) {
 		dbg("Interface name did not match. Drop the message");
 		return;
@@ -152,6 +157,7 @@ void _on_signal_handle_filter(GDBusConnection *conn,
 		strcmp(signal_name, COMM_STATUS_BROADCAST_EVENT_UPGRADE) &&
 		strcmp(signal_name, COMM_STATUS_BROADCAST_EVENT_MOVE) &&
 		strcmp(signal_name, COMM_STATUS_BROADCAST_EVENT_GET_SIZE) &&
+		strcmp(signal_name, COMM_STATUS_BROADCAST_EVENT_GET_JUNK_INFO) &&
 		strcmp(signal_name, COMM_STATUS_BROADCAST_EVENT_INSTALL_PROGRESS)) {
 		dbg("Signal name did not match. Drop the message");
 		return;
@@ -265,7 +271,9 @@ int comm_client_free(comm_client *cc)
 	If ref count is 0 it will get free'd automatically
 	*/
 	g_object_unref(cc->conn);
-	free(cc);
+
+	if(cc)
+		free(cc);
 
 	return 0;
 }
@@ -331,10 +339,11 @@ comm_client_request(
 		rc = __retry_request(cc, req_id, req_type, pkg_type, pkgid, args, cookie, &ret);
 		if(rc == TRUE) {
 			ERR("__retry_request is success[retry_cnt=%d]\n", retry_cnt);
-			return COMM_RET_OK;
+			break;
 		}
 	}
-	return COMM_RET_OK;
+
+	return ret;
 }
 
 /**
@@ -357,6 +366,10 @@ comm_client_set_status_callback(int comm_status_type, comm_client *cc, status_cb
 
 	/* Create new sig_cb_data */
 	cc->sig_cb_data = calloc(1, sizeof(struct signal_callback_data));
+	if(cc->sig_cb_data == NULL){
+		ERR("calloc failed!!");
+		return COMM_RET_ERROR;
+	}
 	(cc->sig_cb_data)->cb = cb;
 	(cc->sig_cb_data)->cb_data = cb_data;
 

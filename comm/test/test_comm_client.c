@@ -49,6 +49,7 @@ int main(int argc, char **argv)
 				  "dpkg", "test_pkg", "arg1 arg2 arg3",
 				  "this_is_a_cookie", 0);
 
+	printf("comm_client_request returns [%d]\n",ret);
 	printf("client: waiting signal...\n");
 	comm_client_set_status_callback(COMM_STATUS_BROADCAST_ALL, cc, stat_cb, NULL);
 

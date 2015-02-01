@@ -15,18 +15,21 @@
 			<smack request="system::vconf" type="rwxat"/>
 			<smack request="system::vconf_inhouse" type="rwxat"/>
 			<smack request="pkgmgr::db" type="rwx"/>
+			<smack request="device::sys_logging" type="w"/>
+			<smack request="device::app_logging" type="w"/>
+			<smack request="sdbd" type="r"/>
 		</request>
 	</define>
 	<request>
 		<domain name="pkgmgr"/>
 	</request>
 	<assign>
-		<filesystem path="/usr/bin/pkg_smack" exec_label="pkgmgr"/>
 		<filesystem path="/usr/bin/pkg_fota" exec_label="pkgmgr"/>
 		<filesystem path="/usr/bin/pkg_initdb" exec_label="pkgmgr"/>
 		<filesystem path="/usr/bin/pkgcmd" exec_label="pkgmgr"/>
 		<filesystem path="/usr/bin/pkginfo" exec_label="pkgmgr"/>
+		<filesystem path="/usr/bin/pkg_getsize" exec_label="pkgmgr"/>
+		<filesystem path="/usr/bin/pkg" exec_label="pkgmgr"/>
 		<filesystem path="/usr/lib/libpkgmgr_parser_lib_sample.so" label="_"/>
-		<filesystem path="/usr/share/dbus-1/services/com.samsung.slp.pkgmgr.service" label="_" exec_label="none"/>
 	</assign>
 </manifest>

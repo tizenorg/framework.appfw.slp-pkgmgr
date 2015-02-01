@@ -29,6 +29,11 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <errno.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <ctype.h>
+#include <sys/time.h>
+#include <time.h>
 
 #include <pkgmgr_parser.h>
 #include <pkgmgr-info.h>
@@ -231,6 +236,19 @@ static char *__find_rpm_pkgid(const char* manifest)
 	return NULL;
 }
 
+static void __apply_smack_for_additional_pkgid(void)
+{
+	char *ug_pkgid = "ui-gadget::client";
+	_D("apply smack pkgid : %s", ug_pkgid);
+	const char *ug_argv[] = { "/usr/bin/rpm-backend", "-k", "ug-smack", "-s", ug_pkgid, NULL };
+	initdb_xsystem(ug_argv);
+
+	char *e17_pkgid = "e17";
+	_D("apply smack pkgid : %s", e17_pkgid);
+	const char *e17_argv[] = { "/usr/bin/rpm-backend", "-k", "ug-smack", "-s", e17_pkgid, NULL };
+	initdb_xsystem(e17_argv);
+}
+
 static int __check_time(long privous_time)
 {
 	long current_time;
@@ -240,6 +258,58 @@ static int __check_time(long privous_time)
 	current_time = tv.tv_sec * 1000l + tv.tv_usec / 1000l;
 
 	return (int)(current_time - privous_time);
+}
+
+static int __pkg_list_cb (const pkgmgrinfo_pkginfo_h handle, void *user_data)
+{
+	int ret = -1;
+	char *pkgid = NULL;
+	char *pkg_type = NULL;
+	char *pkg_version = NULL;
+	char *pkg_label = NULL;
+	char *pkg_rootpath = NULL;
+
+	ret = pkgmgrinfo_pkginfo_get_pkgid(handle, &pkgid);
+	if (ret == -1) {
+		_E("Failed to get pkgmgrinfo_pkginfo_get_pkgid\n");
+		return ret;
+	}
+	ret = pkgmgrinfo_pkginfo_get_type(handle, &pkg_type);
+	if (ret == -1) {
+		_E("Failed to get pkgmgrinfo_pkginfo_get_type\n");
+		return ret;
+	}
+	ret = pkgmgrinfo_pkginfo_get_version(handle, &pkg_version);
+	if (ret == -1) {
+		_E("Failed to get pkgmgrinfo_pkginfo_get_version\n");
+		return ret;
+	}
+	ret = pkgmgrinfo_pkginfo_get_label(handle, &pkg_label);
+	if (ret == -1) {
+		_E("Failed to get pkgmgrinfo_pkginfo_get_label\n");
+		return ret;
+	}
+	if (pkg_type && strcmp(pkg_type, "wgt") == 0)
+	{
+		char buf[1024] = {0};
+		ret = pkgmgrinfo_pkginfo_get_root_path(handle, &pkg_rootpath);
+		if (ret == -1) {
+			_E("pkgmgrinfo_pkginfo_get_root_path\n");
+			return ret;
+		}
+
+		snprintf(buf, 1023, "%s/author-signature.xml", pkg_rootpath);
+
+		if (access(buf, F_OK) == 0)
+		{
+			_D("pkg_type [%s]\tpkgid [%s]\tname [%s]\tversion [%s]\tpkg_subtype [%s]", pkg_type, pkgid, pkg_label, pkg_version, "hybrid");
+			return ret;
+		}
+	}
+
+	_D("pkg_type [%s]\tpkgid [%s]\tname [%s]\tversion [%s]", pkg_type, pkgid, pkg_label, pkg_version);
+
+	return ret;
 }
 
 int initdb_install_corexml(const char *directory)
@@ -253,6 +323,7 @@ int initdb_install_corexml(const char *directory)
 	int corexml_time = 0;
 	int smack_time = 0;
 	int prlivielge_time = 0;
+	int per_pkg_time = 0;
 	int pkg_cnt = 0;
 
 	long check_time;
@@ -298,13 +369,17 @@ int initdb_install_corexml(const char *directory)
 
 		gettimeofday(&tv, NULL);
 		check_time = tv.tv_sec * 1000l + tv.tv_usec / 1000l;
+		per_pkg_time = 0;
 
+		_D("=========================================================================");
+		_D("install manifest=[%s]", buf);
 		const char *corexml_argv[] = { "/usr/bin/rpm-backend", "-k", "core-xml", "-s", buf, NULL };
 		initdb_xsystem(corexml_argv);
 
 		spend_time = __check_time(check_time);
-		_D("Install corexml : %s done[time:%d ms]", manifest, spend_time);
+		_D("corexml is installed, time=[%d]ms", spend_time);
 		corexml_time += spend_time;
+		per_pkg_time += spend_time;
 
 		free(manifest);
 
@@ -317,37 +392,46 @@ int initdb_install_corexml(const char *directory)
 		gettimeofday(&tv, NULL);
 		check_time = tv.tv_sec * 1000l + tv.tv_usec / 1000l;
 
+		_D("try to apply smack");
 		const char *rpmsmack_argv[] = { "/usr/bin/rpm-backend", "-k", "rpm-smack", "-s", pkgid, NULL };
 		initdb_xsystem(rpmsmack_argv);
 
 		spend_time = __check_time(check_time);
-		_D("Smack pkgid : %s done[time:%d ms]", pkgid, spend_time);
+		_D("smack is applied, time=[%d]ms", spend_time);
 		smack_time += spend_time;
+		per_pkg_time += spend_time;
 
 		gettimeofday(&tv, NULL);
 		check_time = tv.tv_sec * 1000l + tv.tv_usec / 1000l;
 
+		_D("try to apply privileges");
 		const char *rpmperm_argv[] = { "/usr/bin/rpm-backend", "-k", "rpm-perm", "-s", pkgid, NULL };
 		initdb_xsystem(rpmperm_argv);
 
 		spend_time = __check_time(check_time);
-
-		_D("Privilege pkgid : %s done[time:%d ms]", pkgid, spend_time);
+		_D("privileges are applied, time=[%d]ms", spend_time);
 		prlivielge_time += spend_time;
+		per_pkg_time += spend_time;
 
+		_D("------------------------------------------------------");
+		_D("done");
+		_D("------------------------------------------------------");
+		_D("manifest xml=[%s]", buf);
+		_D("package id=[%s]", pkgid);
+		_D("time=[%d]ms", per_pkg_time);
 		free(pkgid);
 	}
 
 	closedir(dir);
 
-	_D("================================================================");
-	_D("Package-Manager DB initialize for Core xml[%s]", directory);
-	_D("RPM package cnt       : %d", pkg_cnt);
-	_D("Time for DB Init      : %d  sec", corexml_time / 1000);
-	_D("Time for SMACK        : %d  sec", smack_time / 1000);
-	_D("Time for Privilele    : %d  sec", prlivielge_time / 1000);
-	_D("Time for Toal process : %d  sec", (corexml_time+smack_time+prlivielge_time) / 1000);
-	_D("================================================================");
+	_D("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
+	_D("package manager db init for manifest xml, directory=[%s]", directory);
+	_D("package total count    : %d", pkg_cnt);
+	_D("Time for db init       : %d  sec", corexml_time / 1000);
+	_D("time for smack         : %d  sec", smack_time / 1000);
+	_D("time for privilege     : %d  sec", prlivielge_time / 1000);
+	_D("time for total process : %d  sec", (corexml_time+smack_time+prlivielge_time) / 1000);
+	_D("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
 
 	return 0;
 }
@@ -359,7 +443,7 @@ int initdb_load_directory(const char *directory)
 	int ret;
 	char buf[BUFSZE];
 	int total_cnt = 0;
-	int ok_cnt = 0;
+//	int ok_cnt = 0;
 
 	// desktop file
 	dir = opendir(directory);
@@ -515,6 +599,9 @@ int main(int argc, char *argv[])
 		return 0;
 	}
 
+	/*ui_gadget dont have xml, give a smack label manually*/
+	__apply_smack_for_additional_pkgid();
+
 	ret = initdb_change_perm(PACKAGE_INFO_DB_FILE);
 	if (ret == -1) {
 		_E("cannot chown.");
@@ -540,6 +627,18 @@ int main(int argc, char *argv[])
 	fprintf(stderr, "[PKG_INITDB][D] Package-Manager initializing start : %s", ctime(&start_time));
 	fprintf(stderr, "[PKG_INITDB][D] Package-Manager initializing end   : %s", ctime(&end_time));
 	_D("================================================================");
+
+	_D("==================  Installed package list =====================");
+	ret = pkgmgrinfo_pkginfo_get_list(__pkg_list_cb, NULL);
+	if (ret == -1) {
+		_E("cannot get_list.");
+	}
+	_D("================================================================");
+
+	ret = pkgmgr_parser_insert_app_aliasid();
+	if(ret == -1){
+		_E("Insert for app-aliasID DB failed");
+	}
 
 	return 0;
 }

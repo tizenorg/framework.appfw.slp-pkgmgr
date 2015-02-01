@@ -171,6 +171,10 @@ static char *__get_interface(int status_type)
 			interface = COMM_STATUS_BROADCAST_DBUS_GET_SIZE_INTERFACE;
 			break;
 
+		case COMM_STATUS_BROADCAST_GET_JUNK_INFO:
+			interface = COMM_STATUS_BROADCAST_DBUS_GET_JUNK_INFO_INTERFACE;
+			break;
+
 		default:
 			interface = NULL;
 	}
@@ -209,6 +213,7 @@ _on_signal_handle_filter(DBusConnection *conn,
 		(dbus_message_is_signal(msg, COMM_STATUS_BROADCAST_DBUS_MOVE_INTERFACE, COMM_STATUS_BROADCAST_EVENT_MOVE)) ||
 		(dbus_message_is_signal(msg, COMM_STATUS_BROADCAST_DBUS_UPGRADE_INTERFACE, COMM_STATUS_BROADCAST_EVENT_UPGRADE)) ||
 		(dbus_message_is_signal(msg, COMM_STATUS_BROADCAST_DBUS_GET_SIZE_INTERFACE, COMM_STATUS_BROADCAST_EVENT_GET_SIZE)) ||
+		(dbus_message_is_signal(msg, COMM_STATUS_BROADCAST_DBUS_GET_JUNK_INFO_INTERFACE, COMM_STATUS_BROADCAST_EVENT_GET_JUNK_INFO)) ||
 		(dbus_message_is_signal(msg, COMM_STATUS_BROADCAST_DBUS_INSTALL_PROGRESS_INTERFACE, COMM_STATUS_BROADCAST_EVENT_INSTALL_PROGRESS))) {
 
 		/* Signal type check */

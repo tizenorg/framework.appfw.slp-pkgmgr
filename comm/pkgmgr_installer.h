@@ -57,6 +57,7 @@ typedef void* pkgmgr_instcertinfo_h;
 #define PKGMGR_INSTALLER_END_KEY_STR								"end"
 #define PKGMGR_INSTALLER_INSTALL_PERCENT_KEY_STR					"install_percent"
 #define PKGMGR_INSTALLER_GET_SIZE_KEY_STR							"get_size"
+#define PKGMGR_INSTALLER_GET_JUNK_INFO_KEY_STR						"get_junkinfo"
 
 #define PKGMGR_INSTALLER_INSTALL_EVENT_STR							"install"
 #define PKGMGR_INSTALLER_UNINSTALL_EVENT_STR						"uninstall"
@@ -82,7 +83,8 @@ enum {
 	PKGMGR_REQ_REINSTALL = 6,
 	PKGMGR_REQ_GETSIZE = 7,
 	PKGMGR_REQ_UPGRADE = 8,
-	PKGMGR_REQ_SMACK = 9
+	PKGMGR_REQ_SMACK = 9,
+	PKGMGR_REQ_GETJUNKINFO = 10,
 };
 
 enum {

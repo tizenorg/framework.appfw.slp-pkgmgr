@@ -99,7 +99,8 @@ add_dependencies(pkgmgr_installer_client comm_pkg_mgr_client_gdbus_generated.h c
 ## pkg-mgr server for PMS
 # Get request
 add_library(pkgmgr_installer_pkg_mgr_server STATIC
-		comm_pkg_mgr_server.c)
+		comm_pkg_mgr_server.c
+		)
 set_target_properties(pkgmgr_installer_pkg_mgr_server PROPERTIES SOVERSION ${VERSION_MAJOR})
 set_target_properties(pkgmgr_installer_pkg_mgr_server PROPERTIES VERSION ${VERSION})
 set_target_properties(pkgmgr_installer_pkg_mgr_server PROPERTIES COMPILE_FLAGS "${comm_pkgs_CFLAGS_str}")

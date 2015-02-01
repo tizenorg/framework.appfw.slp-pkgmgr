@@ -23,13 +23,13 @@ set(CMAKE_SKIP_BUILD_RPATH true)
 INCLUDE_DIRECTORIES(${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/comm )
 
 INCLUDE(FindPkgConfig)
-pkg_check_modules(pkgs REQUIRED security-server dlog elementary evas ecore appcore-efl ecore-x ail ecore-file pkgmgr-info pkgmgr-parser iniparser vconf)
+pkg_check_modules(pkgs REQUIRED security-server dlog elementary evas ecore appcore-efl ecore-x ecore-file pkgmgr-info pkgmgr-parser iniparser vconf minizip xdgmime)
 
 FOREACH(flag ${pkgs_CFLAGS})
 	SET(EXTRA_CFLAGS "${EXTRA_CFLAGS} ${flag}")
 ENDFOREACH(flag)
 
-pkg_check_modules(libpkgs REQUIRED dbus-glib-1 dlog ail pkgmgr-info pkgmgr-parser iniparser security-server vconf)
+pkg_check_modules(libpkgs REQUIRED dbus-glib-1 dlog pkgmgr-info pkgmgr-parser iniparser security-server vconf minizip xdgmime)
 
 FOREACH(flag ${libpkgs_CFLAGS})
 	SET(EXTRA_CFLAGS "${EXTRA_CFLAGS} ${flag}")
@@ -60,7 +60,7 @@ add_subdirectory(types)
 ###################################################################################################
 ## for libpkgmgr-client.so (library)
 SET(PKGMGR_CLIENT "pkgmgr-client")
-SET(libpkgmgr-client_SOURCES ${pm_c_src_dir}/pkgmgr-internal.c ${pm_c_src_dir}/pkgmgr.c ${pm_c_src_dir}/pkgmgr-dbinfo.c)
+SET(libpkgmgr-client_SOURCES ${pm_c_src_dir}/pkgmgr-internal.c ${pm_c_src_dir}/pkgmgr.c)
 SET(libpkgmgr-client_LDFLAGS " -module -avoid-version ")
 SET(libpkgmgr-client_CFLAGS  " ${CFLAGS} -fPIC -I${pm_c_inc_dir} -I${pm_inc_dir} -I${pm_t_inc_dir} ${debug_type}")
 
@@ -79,30 +79,30 @@ SET(pkgmgr-server_LDFLAGS ${pkgs_LDFLAGS})
 
 ADD_EXECUTABLE(pkgmgr-server ${pkgmgr-server_SOURCES})
 TARGET_LINK_LIBRARIES(pkgmgr-server pkgmgr_installer pkgmgr_installer_pkg_mgr_server)
-TARGET_LINK_LIBRARIES(pkgmgr-server ${pkgs_LDFLAGS})
+TARGET_LINK_LIBRARIES(pkgmgr-server ${PKGMGR_CLIENT} ${pkgs_LDFLAGS})
 SET_TARGET_PROPERTIES(pkgmgr-server PROPERTIES COMPILE_FLAGS "${pkgmgr-server_CFLAGS}")
 ####################################################################################################
 
 CONFIGURE_FILE(pkgmgr.pc.in pkgmgr.pc @ONLY)
-IF(DEVICE_PROFILE STREQUAL "wearable")
-configure_file(com.samsung.slp.pkgmgr.service.wearable.in com.samsung.slp.pkgmgr.service @ONLY)
-ELSE()
-configure_file(com.samsung.slp.pkgmgr.service.mobile.in com.samsung.slp.pkgmgr.service @ONLY)
-ENDIF()
+CONFIGURE_FILE(junkmgr.pc.in junkmgr.pc @ONLY)
+configure_file(com.samsung.slp.pkgmgr.service.in com.samsung.slp.pkgmgr.service @ONLY)
 configure_file(pkg_path.conf.in pkg_path.conf @ONLY)
 configure_file(710.pkgmgr.patch.sh.in 710.pkgmgr.patch.sh @ONLY)
+configure_file(pkgmgr-soft-reset-ui.sh.in pkgmgr-soft-reset-ui.sh @ONLY)
 
 #INSTALL(FILES ${CMAKE_BINARY_DIR}/libpkgmgr-client.so DESTINATION lib)
 INSTALL(TARGETS ${PKGMGR_CLIENT} DESTINATION lib COMPONENT RuntimeLibraries)
 INSTALL(FILES ${CMAKE_BINARY_DIR}/pkgmgr-server DESTINATION bin PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_WRITE)
 INSTALL(FILES ${CMAKE_CURRENT_BINARY_DIR}/pkgmgr.pc DESTINATION lib/pkgconfig)
+INSTALL(FILES ${CMAKE_CURRENT_BINARY_DIR}/junkmgr.pc DESTINATION lib/pkgconfig)
 INSTALL(FILES ${CMAKE_CURRENT_SOURCE_DIR}/client/include/package-manager.h DESTINATION include)
-INSTALL(FILES ${CMAKE_CURRENT_SOURCE_DIR}/client/include/pkgmgr-dbinfo.h DESTINATION include)
+INSTALL(FILES ${CMAKE_CURRENT_SOURCE_DIR}/include/junk-manager.h DESTINATION include)
 INSTALL(FILES ${CMAKE_CURRENT_BINARY_DIR}/com.samsung.slp.pkgmgr.service DESTINATION ${PREFIX}/share/dbus-1/services/)
 INSTALL(FILES ${CMAKE_CURRENT_BINARY_DIR}/slp-pkgmgr.service DESTINATION ${PREFIX}/lib/systemd/system/)
 INSTALL(FILES ${CMAKE_CURRENT_BINARY_DIR}/pkg_path.conf DESTINATION ${PREFIX}/etc/package-manager/)
 install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/queue_status DESTINATION etc/package-manager/server/)
 install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/710.pkgmgr.patch.sh DESTINATION /etc/opt/upgrade/)
+install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/pkgmgr-soft-reset-ui.sh DESTINATION ${PREFIX}/etc/package-manager/)
 
 ####################################################################################################
 add_subdirectory(installers)

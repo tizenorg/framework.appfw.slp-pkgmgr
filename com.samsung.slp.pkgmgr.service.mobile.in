@@ -1,4 +1,0 @@
-[D-BUS Service]
-Name=com.samsung.slp.pkgmgr
-Exec=@PREFIX@/bin/env DISPLAY=:0 @PREFIX@/bin/pkgmgr-server
-User=root

@@ -142,7 +142,7 @@ comm_client_request(comm_client *cc, const char *req_id, const int req_type,
 					   pkg_type, pkgid, args, cookie,
 					   &ret, &(cc->err));
 	if (TRUE == r) {
-		ret = COMM_RET_OK;
+		//ret = COMM_RET_OK;
 	} else {
 		g_printerr("Failed to send request via dbus: %s\n",
 			   cc->err->message);
@@ -152,7 +152,7 @@ comm_client_request(comm_client *cc, const char *req_id, const int req_type,
 		}
 		return ret;
 	}
-	dbg("request sent");
+	dbg("Request ok");
 
 	if (cc->pkgid) {
 		dbg("freeing pkgid");

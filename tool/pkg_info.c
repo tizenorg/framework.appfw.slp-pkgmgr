@@ -32,9 +32,7 @@
 #include <pkgmgr-info.h>
 #include "package-manager.h"
 #include "package-manager-types.h"
-#include "pkgmgr-dbinfo.h"
 #include "pkgmgr_installer.h"
-
 
 static void __print_usage();
 static int __get_pkg_info(char *pkgid);
@@ -49,7 +47,6 @@ static int __add_app_filter(void);
 static int __add_pkg_filter(void);
 static int __insert_manifest_in_db(char *manifest);
 static int __remove_manifest_from_db(char *manifest);
-static int __set_pkginfo_in_db(char *pkgid);
 static int __set_certinfo_in_db(char *pkgid);
 static int __get_certinfo_from_db(char *pkgid);
 static int __del_certinfo_from_db(char *pkgid);
@@ -71,7 +68,7 @@ static void __get_pkgmgrinfo_pkginfo(const pkgmgrinfo_pkginfo_h handle, void *us
 	char *author_href = NULL;
 	char *root_path = NULL;
 	char *mainappid = NULL;
-	pkgmgr_install_location location = 0;
+	pkgmgrinfo_install_location location = 0;
 	char *icon = NULL;
 	char *label = NULL;
 	char *desc = NULL;
@@ -80,7 +77,7 @@ static void __get_pkgmgrinfo_pkginfo(const pkgmgrinfo_pkginfo_h handle, void *us
 	bool readonly = 0;
 	bool update = 0;
 	bool system = 0;
-	int size = -1;
+	bool support_disable = 0;
 	int installed_time = -1;
 
 	ret = pkgmgrinfo_pkginfo_get_type(handle, &type);
@@ -102,12 +99,6 @@ static void __get_pkgmgrinfo_pkginfo(const pkgmgrinfo_pkginfo_h handle, void *us
 		printf("Failed to get install location\n");
 	}
 	printf("Install Location: %d\n", location);
-
-	ret = pkgmgrinfo_pkginfo_get_package_size(handle, &size);
-	if (ret < 0) {
-		printf("Failed to get package size \n");
-	}
-	printf("Package Size: %d\n", size);
 
 	ret = pkgmgrinfo_pkginfo_get_icon(handle, &icon);
 	if (ret < 0) {
@@ -206,7 +197,14 @@ static void __get_pkgmgrinfo_pkginfo(const pkgmgrinfo_pkginfo_h handle, void *us
 	else
 		printf("system: %d\n", system);
 
-	return 0;
+	ret = pkgmgrinfo_pkginfo_is_support_disable(handle, &support_disable);
+	if (ret < 0) {
+		printf("Failed to get support-disable\n");
+	}
+	else
+		printf("Support-Disable: %d\n", support_disable);
+
+	return ;
 }
 int __get_app_id(const pkgmgrinfo_appinfo_h handle, void *user_data)
 {
@@ -270,8 +268,6 @@ static void __print_usage()
 	printf("\tpkginfo --listpkg \n\n");
 	printf("For Getting list of installed applications\n");
 	printf("\tpkginfo --listapp \n\n");
-	printf("For Getting list of disabled packages\n");
-	printf("\tpkginfo --listdisabled\n\n");
 	printf("For Getting app list for a particular package\n");
 	printf("\tpkginfo --list <pkgid>\n\n");
 	printf("For Getting app category list for a particular application\n");
@@ -282,8 +278,6 @@ static void __print_usage()
 	printf("\tpkginfo --appcontrol <appid>\n\n");
 	printf("To insert|remove manifest info in DB\n");
 	printf("\tpkginfo --[imd|rmd] <manifest file name>\n\n");
-	printf("To set pkginfo in DB\n");
-	printf("\tpkginfo --setdb <pkgid>\n\n");
 	printf("To set manifest validation\n");
 	printf("\tpkginfo --check <manifest file name>\n\n");
 	printf("To set cert info in DB\n");
@@ -414,8 +408,10 @@ static int __add_app_filter()
 		printf("13 --> filter by app onboot [0|1]\n");
 		printf("14 --> filter by app autorestart [0|1]\n");
 		printf("15 --> filter by app taskmanage [0|1]\n");
-		printf("16 --> filter by app hwacceleration\n");
-		printf("17 --> filter by app screenreader\n");
+		printf("16 --> filter by app support-disable [0|1]\n");
+		printf("17 --> filter by app hwacceleration\n");
+		printf("18 --> filter by app screenreader\n");
+		printf("19 --> filter by app disable [0|1]\n");
 		choice = __get_integer_input_data();
 		switch (choice) {
 		case 0:
@@ -594,6 +590,16 @@ static int __add_app_filter()
 			}
 			break;
 		case 16:
+			val = __get_integer_input_data();
+			ret = pkgmgrinfo_appinfo_filter_add_bool(handle,
+				PMINFO_APPINFO_PROP_APP_SUPPORT_DISABLE, val);
+			if (ret < 0) {
+				printf("pkgmgrinfo_appinfo_filter_add_bool() failed\n");
+				ret = -1;
+				goto err;
+			}
+			break;
+		case 17:
 			value = __get_string_input_data();
 			ret = pkgmgrinfo_appinfo_filter_add_string(handle,
 				PMINFO_APPINFO_PROP_APP_HWACCELERATION, value);
@@ -605,7 +611,7 @@ static int __add_app_filter()
 			free(value);
 			value = NULL;
 			break;
-		case 17:
+		case 18:
 			value = __get_string_input_data();
 			ret = pkgmgrinfo_appinfo_filter_add_string(handle,
 				PMINFO_APPINFO_PROP_APP_SCREENREADER, value);
@@ -616,6 +622,16 @@ static int __add_app_filter()
 			}
 			free(value);
 			value = NULL;
+			break;
+		case 19:
+			val = __get_integer_input_data();
+			ret = pkgmgrinfo_appinfo_filter_add_bool(handle,
+				PMINFO_APPINFO_PROP_APP_DISABLE, val);
+			if (ret < 0) {
+				printf("pkgmgrinfo_appinfo_filter_add_bool() failed\n");
+				ret = -1;
+				goto err;
+			}
 			break;
 		default:
 			printf("Invalid filter property\n");
@@ -664,8 +680,11 @@ static int __add_pkg_filter()
 		printf("11 --> filter by package preload [0|1]\n");
 		printf("12 --> filter by package update [0|1]\n");
 		printf("13 --> filter by package appsetting [0|1]\n");
-		printf("14 --> filter by package size\n");
-		printf("15 --> filter by package installed storage[installed_internal | installed_external]\n");
+		printf("14 --> filter by package support-disable [0|1]\n");
+		printf("15 --> filter by package size\n");
+		printf("16 --> filter by package installed storage[installed_internal | installed_external]\n");
+		printf("17 --> filter by package disable [0|1]\n");
+
 		choice = __get_integer_input_data();
 		switch (choice) {
 		case 0:
@@ -821,6 +840,16 @@ static int __add_pkg_filter()
 			break;
 		case 14:
 			val = __get_integer_input_data();
+			ret = pkgmgrinfo_pkginfo_filter_add_bool(handle,
+				PMINFO_PKGINFO_PROP_PACKAGE_SUPPORT_DISABLE, val);
+			if (ret < 0) {
+				printf("pkgmgrinfo_pkginfo_filter_add_bool() failed\n");
+				ret = -1;
+				goto err;
+			}
+			break;
+		case 15:
+			val = __get_integer_input_data();
 			ret = pkgmgrinfo_pkginfo_filter_add_int(handle,
 				PMINFO_PKGINFO_PROP_PACKAGE_SIZE, val);
 			if (ret < 0) {
@@ -829,7 +858,7 @@ static int __add_pkg_filter()
 				goto err;
 			}
 			break;
-		case 15:
+		case 16:
 			value = __get_string_input_data();
 			ret = pkgmgrinfo_pkginfo_filter_add_string(handle,
 				PMINFO_PKGINFO_PROP_PACKAGE_INSTALLED_STORAGE, value);
@@ -841,6 +870,17 @@ static int __add_pkg_filter()
 			free(value);
 			value = NULL;
 			break;
+		case 17:
+			val = __get_integer_input_data();
+			ret = pkgmgrinfo_pkginfo_filter_add_bool(handle,
+				PMINFO_PKGINFO_PROP_PACKAGE_DISABLE, val);
+			if (ret < 0) {
+				printf("pkgmgrinfo_pkginfo_filter_add_bool() failed\n");
+				ret = -1;
+				goto err;
+			}
+			break;
+
 		default:
 			printf("Invalid filter property\n");
 				pkgmgrinfo_pkginfo_filter_destroy(handle);
@@ -1049,15 +1089,17 @@ static int __get_certinfo_from_db(char *pkgid)
 	int choice = -1;
 	int i = 0;
 	const char *value = NULL;
-	pkgmgr_certinfo_h handle = NULL;
-	ret = pkgmgr_pkginfo_create_certinfo(&handle);
+	pkgmgrinfo_certinfo_h handle = NULL;
+	ret = pkgmgrinfo_pkginfo_create_certinfo(&handle);
 	if (ret < 0) {
-		printf("pkgmgr_pkginfo_create_certinfo failed\n");
+		printf("pkgmgrinfo_pkginfo_create_certinfo failed\n");
 		return -1;
 	}
-	ret = pkgmgr_pkginfo_load_certinfo(pkgid, handle);
+	ret = pkgmgrinfo_pkginfo_load_certinfo(pkgid, handle);
 	if (ret < 0) {
-		printf("pkgmgr_pkginfo_load_certinfo failed\n");
+		printf("pkgmgrinfo_pkginfo_load_certinfo failed\n");
+		if (handle)
+			pkgmgr_pkginfo_destroy_certinfo(handle);
 		return -1;
 	}
 	while (choice != 0)
@@ -1079,13 +1121,13 @@ static int __get_certinfo_from_db(char *pkgid)
 		case 0:
 			for (i = 0; i < 9; i++)
 			{
-				pkgmgr_pkginfo_get_cert_value(handle, i, &value);
+				pkgmgrinfo_pkginfo_get_cert_value(handle, i, &value);
 				if (value)
 					printf("cert type[%d] value = %s\n", i, value);
 			}
-			ret = pkgmgr_pkginfo_destroy_certinfo(handle);
+			ret = pkgmgrinfo_pkginfo_destroy_certinfo(handle);
 			if (ret < 0) {
-				printf("pkgmgr_pkginfo_destroy_certinfo failed\n");
+				printf("pkgmgrinfo_pkginfo_destroy_certinfo failed\n");
 				ret = -1;
 				goto end;
 			}
@@ -1100,14 +1142,14 @@ static int __get_certinfo_from_db(char *pkgid)
 		case 7:
 		case 8:
 		case 9:
-			ret = pkgmgr_pkginfo_get_cert_value(handle, choice - 1, &value);
+			ret = pkgmgrinfo_pkginfo_get_cert_value(handle, choice - 1, &value);
 			if (value)
 				printf("cert type[%d] value = %s\n", choice - 1, value);
 			break;
 		case 10:
-			ret = pkgmgr_pkginfo_destroy_certinfo(handle);
+			ret = pkgmgrinfo_pkginfo_destroy_certinfo(handle);
 			if (ret < 0) {
-				printf("pkgmgr_pkginfo_destroy_certinfo failed\n");
+				printf("pkgmgrinfo_pkginfo_destroy_certinfo failed\n");
 				return -1;
 			}
 			ret = 0;
@@ -1332,224 +1374,6 @@ err:
 	return ret;
 }
 
-static int __set_pkginfo_in_db(char *pkgid)
-{
-	if (pkgid == NULL) {
-		printf("pkgid is NULL\n");
-		return -1;
-	}
-	int ret = 0;
-	int choice = -1;
-	int preload = -1;
-	int removable = -1;
-	int location = -1;
-	char *locale = NULL;
-	pkgmgr_pkgdbinfo_h handle = NULL;
-	INSTALL_LOCATION storage = 0;
-
-	ret = pkgmgrinfo_create_pkgdbinfo(pkgid, &handle);
-	if (ret < 0) {
-		printf("pkgmgrinfo_create_pkgdbinfo failed\n");
-		return -1;
-	}
-	while (choice != 0)
-	{
-		printf("Enter the choice you want to set\n");
-		printf("0 --> to set data in DB\n");
-		printf("1 --> pkg type\n");
-		printf("2 --> pkg version\n");
-		printf("3 --> pkg instal location\n");
-		printf("4 --> pkg label\n");
-		printf("5 --> pkg icon\n");
-		printf("6 --> pkg description\n");
-		printf("7 --> pkg author\n");
-		printf("8 --> pkg removable\n");
-		printf("9 --> pkg preload\n");
-		printf("10 --> pkg size\n");
-		printf("11 --> pkg installed storage\n");
-		choice = __get_integer_input_data();
-		switch (choice) {
-		case 0:
-			ret = pkgmgrinfo_save_pkgdbinfo(handle);
-			if (ret < 0) {
-				printf("pkgmgrinfo_save_pkgdbinfo failed\n");
-				pkgmgrinfo_destroy_pkgdbinfo(handle);
-				return -1;
-			}
-			ret = pkgmgrinfo_destroy_pkgdbinfo(handle);
-			if (ret < 0) {
-				printf("pkgmgrinfo_destroy_pkgdbinfo failed\n");
-				return -1;
-			}
-			break;
-		case 1:
-			printf("Enter type: \n");
-			char *type = __get_string_input_data();
-			ret = pkgmgrinfo_set_type_to_pkgdbinfo(handle, type);
-			if (ret < 0) {
-				printf("pkgmgrinfo_set_type_to_pkgdbinfo failed\n");
-				pkgmgrinfo_destroy_pkgdbinfo(handle);
-				free(type);
-				return -1;
-			}
-			free(type);
-			break;
-		case 2:
-			printf("Enter version: \n");
-			char *version = __get_string_input_data();
-			ret = pkgmgrinfo_set_version_to_pkgdbinfo(handle, version);
-			if (ret < 0) {
-				printf("pkgmgrinfo_set_version_to_pkgdbinfo failed\n");
-				pkgmgrinfo_destroy_pkgdbinfo(handle);
-				free(version);
-				return -1;
-			}
-			free(version);
-			break;
-		case 3:
-			printf("Enter install location [0:internal | 1:external]: \n");
-			location = __get_integer_input_data();
-			ret = pkgmgrinfo_set_install_location_to_pkgdbinfo(handle, location);
-			if (ret < 0) {
-				printf("pkgmgrinfo_set_install_location_to_pkgdbinfo failed\n");
-				pkgmgrinfo_destroy_pkgdbinfo(handle);
-				return -1;
-			}
-			break;
-		case 4:
-			printf("Enter label :\n");
-			char *label = __get_string_input_data();
-			printf("Enter locale ['def' for default]: \n");
-			locale = __get_string_input_data();
-			if (strcmp(locale, "def") == 0)
-				ret = pkgmgrinfo_set_label_to_pkgdbinfo(handle, label, NULL);
-			else
-				ret = pkgmgrinfo_set_label_to_pkgdbinfo(handle, label, locale);
-			if (ret < 0) {
-				printf("pkgmgrinfo_set_label_to_pkgdbinfo failed\n");
-				pkgmgrinfo_destroy_pkgdbinfo(handle);
-				free(locale);
-				free(label);
-				return -1;
-			}
-			free(locale);
-			free(label);
-			break;
-		case 5:
-			printf("Enter icon: \n");
-			char *icon = __get_string_input_data();
-			printf("Enter locale ['def' for default]: \n");
-			locale = __get_string_input_data();
-			if (strcmp(locale, "def") == 0)
-				ret = pkgmgrinfo_set_icon_to_pkgdbinfo(handle, icon, NULL);
-			else
-				ret = pkgmgrinfo_set_icon_to_pkgdbinfo(handle, icon, locale);
-			if (ret < 0) {
-				printf("pkgmgrinfo_set_icon_to_pkgdbinfo failed\n");
-				pkgmgrinfo_destroy_pkgdbinfo(handle);
-				free(locale);
-				free(icon);
-				return -1;
-			}
-			free(locale);
-			free(icon);
-			break;
-		case 6:
-			printf("Enter description: \n");
-			char *description = __get_string_input_data();
-			printf("Enter locale ['def' for default]: \n");
-			locale = __get_string_input_data();
-			if (strcmp(locale, "def") == 0)
-				ret = pkgmgrinfo_set_description_to_pkgdbinfo(handle, description, NULL);
-			else
-				ret = pkgmgrinfo_set_description_to_pkgdbinfo(handle, description, locale);
-			if (ret < 0) {
-				printf("pkgmgrinfo_set_description_to_pkgdbinfo failed\n");
-				pkgmgrinfo_destroy_pkgdbinfo(handle);
-				free(locale);
-				free(description);
-				return -1;
-			}
-			free(locale);
-			free(description);
-			break;
-		case 7:
-			printf("Enter author name: \n");
-			char *author_name = __get_string_input_data();
-			printf("Enter locale ['def' for default]: \n");
-			locale = __get_string_input_data();
-			printf("Enter author email: \n");
-			char *author_email = __get_string_input_data();
-			printf("Enter author href: \n");
-			char *author_href = __get_string_input_data();
-			if (strcmp(locale, "def") == 0)
-				ret = pkgmgrinfo_set_author_to_pkgdbinfo(handle, author_name, author_email, author_href, NULL);
-			else
-				ret = pkgmgrinfo_set_author_to_pkgdbinfo(handle, author_name, author_email, author_href, locale);
-			if (ret < 0) {
-				printf("pkgmgrinfo_set_author_to_pkgdbinfo failed\n");
-				pkgmgrinfo_destroy_pkgdbinfo(handle);
-				free(locale);
-				free(author_name);
-				free(author_email);
-				free(author_href);
-				return -1;
-			}
-			free(locale);
-			free(author_name);
-			free(author_email);
-			free(author_href);
-			break;
-		case 8:
-			printf("Enter removable [0:false | 1:true]: \n");
-			removable = __get_integer_input_data();
-			ret = pkgmgrinfo_set_removable_to_pkgdbinfo(handle, removable);
-			if (ret < 0) {
-				printf("pkgmgrinfo_set_removable_to_pkgdbinfo failed\n");
-				pkgmgrinfo_destroy_pkgdbinfo(handle);
-				return -1;
-			}
-			break;
-		case 9:
-			printf("Enter preload [0:false | 1:true]: \n");
-			preload = __get_integer_input_data();
-			ret = pkgmgrinfo_set_preload_to_pkgdbinfo(handle, preload);
-			if (ret < 0) {
-				printf("pkgmgrinfo_set_preload_to_pkgdbinfo failed\n");
-				pkgmgrinfo_destroy_pkgdbinfo(handle);
-				return -1;
-			}
-			break;
-		case 10:
-			printf("Enter size in MB \n");
-			char *size = __get_string_input_data();
-			ret = pkgmgrinfo_set_size_to_pkgdbinfo(handle, size);
-			if (ret < 0) {
-				printf("pkgmgrinfo_set_size_to_pkgdbinfo failed\n");
-				pkgmgrinfo_destroy_pkgdbinfo(handle);
-				free(size);
-				return -1;
-			}
-			free(size);
-			break;
-		case 11:
-			printf("Enter insatlled storage [ 0:INTERNAL | 1:EXTERNAL ] \n");
-			storage = __get_integer_input_data();
-			ret = pkgmgrinfo_set_installed_storage_to_pkgdbinfo(handle, storage);
-			if (ret < 0) {
-				printf("pkgmgrinfo_set_installed_storage_to_pkgdbinfo failed\n");
-				pkgmgrinfo_destroy_pkgdbinfo(handle);
-				return -1;
-			}
-			break;
-		default:
-			printf("Invalid number entered\n");
-			continue;
-		}
-	}
-	return 0;
-}
-
 static int __insert_manifest_in_db(char *manifest)
 {
 	int ret = 0;
@@ -1608,13 +1432,14 @@ int app_func(const pkgmgrinfo_appinfo_h handle, void *user_data)
 	char *exec = NULL;
 	char *icon = NULL;
 	char *label = NULL;
-	pkgmgr_app_component component = 0;
+	pkgmgrinfo_app_component component = 0;
 	char *apptype = NULL;
 	bool nodisplay = 0;
 	bool multiple = 0;
 	bool taskmanage = 0;
-	pkgmgr_hwacceleration_type hwacceleration;
+	pkgmgrinfo_app_hwacceleration hwacceleration;
 	pkgmgrinfo_app_screenreader screenreader;
+	bool support_disable = 0;
 	bool onboot = 0;
 	bool autorestart = 0;
 	char *package = NULL;
@@ -1666,7 +1491,7 @@ int app_func(const pkgmgrinfo_appinfo_h handle, void *user_data)
 	if (apptype)
 		printf("Apptype: %s\n", apptype);
 
-	if (component == PM_UI_APP) {
+	if (component == PMINFO_UI_APP) {
 		printf("component: uiapp\n");
 		ret = pkgmgrinfo_appinfo_is_multiple(handle, &multiple);
 		if (ret < 0) {
@@ -1703,8 +1528,14 @@ int app_func(const pkgmgrinfo_appinfo_h handle, void *user_data)
 			printf("screenreader: %d\n", screenreader);
 		}
 
+		ret = pkgmgrinfo_appinfo_is_support_disable(handle, &support_disable);
+		if (ret < 0) {
+			printf("Failed to get support-disable\n");
+		} else {
+			printf("support-disable: %d\n", support_disable);
+		}
 	}
-	if (component == PM_SVC_APP) {
+	if (component == PMINFO_SVC_APP) {
 		printf("component: svcapp\n");
 		ret = pkgmgrinfo_appinfo_is_onboot(handle, &onboot);
 		if (ret < 0) {
@@ -1735,6 +1566,7 @@ static int __pkg_list_cb (const pkgmgrinfo_pkginfo_h handle, void *user_data)
 	char *pkg_type;
 	char *pkg_version;
 	bool preload = 0;
+	bool support_disable = 0;
 	int installed_time = -1;
 
 	ret = pkgmgrinfo_pkginfo_get_pkgid(handle, &pkgid);
@@ -1753,6 +1585,10 @@ static int __pkg_list_cb (const pkgmgrinfo_pkginfo_h handle, void *user_data)
 	if(ret < 0) {
 		printf("pkgmgrinfo_pkginfo_is_preload() failed\n");
 	}
+	ret = pkgmgrinfo_pkginfo_is_support_disable(handle, &support_disable);
+	if(ret < 0) {
+		printf("pkgmgrinfo_pkginfo_is_support_disable() failed\n");
+	}
 	ret = pkgmgrinfo_pkginfo_get_installed_time(handle, &installed_time);
 	if(ret < 0) {
 		printf("pkgmgrinfo_pkginfo_get_installed_time() failed\n");
@@ -1760,8 +1596,8 @@ static int __pkg_list_cb (const pkgmgrinfo_pkginfo_h handle, void *user_data)
 
 
 	printf("---------------------------------------\n");
-	printf("pkg_type [%s]\tpkgid [%s]\tversion [%s]\tpreload [%d]\tinstalled_time [%d]\n", pkg_type,
-	       pkgid, pkg_version, preload, installed_time);
+	printf("pkg_type [%s]\tpkgid [%s]\tversion [%s]\tpreload [%d]\tsupport-disable [%d]\tinstalled_time [%d]\n", pkg_type,
+	       pkgid, pkg_version, preload, support_disable, installed_time);
 
 	printf("**List of Ui-Apps**\n");
 	ret = pkgmgrinfo_appinfo_get_list(handle, PM_UI_APP, app_func, (void *)test_data);
@@ -1775,57 +1611,6 @@ static int __pkg_list_cb (const pkgmgrinfo_pkginfo_h handle, void *user_data)
 	}
 
 	printf("---------------------------------------\n");
-
-	return 0;
-}
-
-static int __disabled_pkg_list_cb (const pkgmgr_pkginfo_h handle, void *user_data)
-{
-	int ret = -1;
-	char *pkgid;
-	char *appid;
-	char *label;
-	char *icon;
-	char *pkg_type;
-	char *pkg_version;
-	bool preload = 0;
-	pkgmgrinfo_appinfo_h apphandle;
-
-	ret = pkgmgrinfo_pkginfo_get_pkgid(handle, &pkgid);
-	if(ret < 0) {
-		printf("pkgmgrinfo_pkginfo_get_pkgid() failed\n");
-		return 0;
-	}
-	ret = pkgmgrinfo_pkginfo_get_type(handle, &pkg_type);
-	if(ret < 0) {
-		printf("pkgmgrinfo_pkginfo_get_type() failed\n");
-	}
-
-	ret = pkgmgrinfo_pkginfo_get_mainappid(handle, &appid);
-	if(ret < 0) {
-		printf("pkgmgrinfo_pkginfo_get_mainappid() failed\n");
-	}
-
-	ret = pkgmgrinfo_appinfo_get_disabled_appinfo(appid, &apphandle);
-	if(ret < 0) {
-		printf("pkgmgrinfo_pkginfo_get_mainappid() failed\n");
-	}
-
-	ret = pkgmgrinfo_appinfo_get_label(apphandle, &label);
-	if(ret < 0) {
-		printf("pkgmgrinfo_pkginfo_get_mainappid() failed\n");
-	}
-	ret = pkgmgrinfo_appinfo_get_icon(apphandle, &icon);
-	if(ret < 0) {
-		printf("pkgmgrinfo_appinfo_get_icon() failed\n");
-	}
-
-	printf("---------------------------------------\n");
-	printf("pkg info : pkgid=[%s] type=[%s] mainappid=[%s]\n", pkgid, pkg_type, appid);
-	printf("app info : appid=[%s] label=[%s] icon=[%s]\n", appid, label, icon);
-	printf("---------------------------------------\n");
-
-	pkgmgrinfo_appinfo_destroy_appinfo(apphandle);
 
 	return 0;
 }
@@ -1847,17 +1632,6 @@ static int __get_installed_app_list()
 	ret = pkgmgrinfo_appinfo_get_installed_list(app_func, NULL);
 	if (ret < 0) {
 		printf("pkgmgrinfo_appinfo_get_installed_list() failed\n");
-		return -1;
-	}
-	return 0;
-}
-
-static int __get_disabled_pkg_list()
-{
-	int ret = -1;
-	ret = pkgmgrinfo_pkginfo_get_disabled_list(__disabled_pkg_list_cb, NULL);
-	if (ret < 0) {
-		printf("pkgmgrinfo_pkginfo_get_disabled_list() failed\n");
 		return -1;
 	}
 	return 0;
@@ -1952,7 +1726,7 @@ static int __get_app_category_list(char *appid)
 		pkgmgrinfo_appinfo_destroy_appinfo(handle);
 		return -1;
 	}
-	pkgmgr_appinfo_destroy_appinfo(handle);
+	pkgmgrinfo_appinfo_destroy_appinfo(handle);
 	return 0;
 }
 
@@ -2053,21 +1827,26 @@ static int __get_app_info(char *appid)
 	char *exec = NULL;
 	char *app_id = NULL;
 	char *apptype = NULL;
+	char *pkgtype = NULL;
 	char *icon = NULL;
 	char *label = NULL;
 	char *package = NULL;
-	pkgmgr_app_component component = 0;
+	pkgmgrinfo_app_component component = 0;
 	bool nodisplay = 0;
 	bool multiple = 0;
 	bool taskmanage = 0;
-	pkgmgr_hwacceleration_type hwacceleration;
+	pkgmgrinfo_app_hwacceleration hwacceleration;
 	pkgmgrinfo_app_screenreader screenreader;
 	bool onboot = 0;
 	bool autorestart = 0;
 	bool enabled = 0;
 	bool preload = 0;
+	bool support_disable = 0;
+	bool system = 0;
+	char* effectimage_type = NULL;
 	pkgmgrinfo_appinfo_h handle;
 	int ret = -1;
+	int installed_time = -1;
 
 	ret = pkgmgrinfo_appinfo_get_appinfo(appid, &handle);
 	if (ret < 0) {
@@ -2106,6 +1885,10 @@ static int __get_app_info(char *appid)
 	if (ret < 0) {
 		printf("Failed to get apptype\n");
 	}
+	ret = pkgmgrinfo_appinfo_get_pkgtype(handle, &pkgtype);
+	if (ret < 0) {
+		printf("Failed to get pkgtyp\n");
+	}
 	ret = pkgmgrinfo_appinfo_is_nodisplay(handle, &nodisplay);
 	if (ret < 0) {
 		printf("Failed to get nodisplay\n");
@@ -2142,6 +1925,22 @@ static int __get_app_info(char *appid)
 	if (ret < 0) {
 		printf("Failed to get preload\n");
 	}
+	ret = pkgmgrinfo_appinfo_is_system(handle, &system);
+	if (ret < 0) {
+		printf("Failed to get system\n");
+	}
+	ret = pkgmgrinfo_appinfo_is_support_disable(handle, &support_disable);
+	if (ret < 0) {
+		printf("Failed to get support-disable\n");
+	}
+	ret = pkgmgrinfo_appinfo_get_effectimage_type(handle, &effectimage_type);
+	if (ret < 0) {
+		printf("Failed to get effectimage-type\n");
+	}
+	ret = pkgmgrinfo_appinfo_get_installed_time(handle, &installed_time);
+	if (ret < 0) {
+		printf("Failed to get effectimage-type\n");
+	}
 
 	if (app_id)
 		printf("Appid: %s\n", app_id);
@@ -2151,10 +1950,14 @@ static int __get_app_info(char *appid)
 
 	if (exec)
 		printf("Exec: %s\n", exec);
+
 	if (apptype)
 		printf("Apptype: %s\n", apptype);
 
-	if (component == PM_UI_APP) {
+	if (pkgtype)
+		printf("Pkgtype: %s\n", pkgtype);
+
+	if (component == PMINFO_UI_APP) {
 		printf("component: uiapp\n");
 
 		if (icon)
@@ -2167,7 +1970,7 @@ static int __get_app_info(char *appid)
 		printf("Taskmanage: %d\n", taskmanage);
 		printf("Hw-Acceleration: %d\n", hwacceleration);
 		printf("Screenreader: %d\n", screenreader);
-	} else if (component == PM_SVC_APP) {
+	} else if (component == PMINFO_SVC_APP) {
 		printf("component: svcapp\n");
 
 		if (icon)
@@ -2183,6 +1986,12 @@ static int __get_app_info(char *appid)
 
 	printf("Enabled: %d\n", enabled);
 	printf("Preload: %d\n", preload);
+	printf("System: %d\n", system);
+	printf("Support-Disable: %d\n", support_disable);
+	printf("Installed-Time: %d\n", installed_time);
+
+	if (effectimage_type)
+		printf("Effectimage-Type: %s\n", effectimage_type);
 
 	pkgmgrinfo_appinfo_destroy_appinfo(handle);
 	return 0;
@@ -2211,9 +2020,12 @@ int main(int argc, char *argv[])
 	long starttime;
 	long endtime;
 	struct timeval tv;
+	char option[PKG_VALUE_STRING_LEN_MAX + 1] = {0,};
 
 	gettimeofday(&tv, NULL);
 	starttime = tv.tv_sec * 1000l + tv.tv_usec / 1000l;
+
+	snprintf(option, PKG_VALUE_STRING_LEN_MAX, "%s", argv[1]);
 
 	locale = vconf_get_str(VCONFKEY_LANGSET);
 	if (locale == NULL)
@@ -2225,7 +2037,7 @@ int main(int argc, char *argv[])
 
 	locale = NULL;
 	if (argc == 2) {
-		if (strcmp(argv[1], "--listpkg") == 0) {
+		if (strcmp(option, "--listpkg") == 0) {
 			ret = __get_pkg_list();
 			if (ret == -1) {
 				printf("get pkg list failed\n");
@@ -2233,7 +2045,7 @@ int main(int argc, char *argv[])
 			} else {
 				goto end;
 			}
-		} else if (strcmp(argv[1], "--app-flt") == 0) {
+		} else if (strcmp(option, "--app-flt") == 0) {
 			ret = __add_app_filter();
 			if (ret == -1) {
 				printf("Adding app filter failed\n");
@@ -2241,7 +2053,7 @@ int main(int argc, char *argv[])
 			} else {
 				goto end;
 			}
-		} else if (strcmp(argv[1], "--pkg-flt") == 0) {
+		} else if (strcmp(option, "--pkg-flt") == 0) {
 			ret = __add_pkg_filter();
 			if (ret == -1) {
 				printf("Adding pkg filter failed\n");
@@ -2249,7 +2061,7 @@ int main(int argc, char *argv[])
 			} else {
 				goto end;
 			}
-		} else if (strcmp(argv[1], "--metadata-flt") == 0) {
+		} else if (strcmp(option, "--metadata-flt") == 0) {
 			ret = __add_metadata_filter();
 			if (ret == -1) {
 				printf("Adding pkg filter failed\n");
@@ -2257,18 +2069,10 @@ int main(int argc, char *argv[])
 			} else {
 				goto end;
 			}
-		} else if (strcmp(argv[1], "--listapp") == 0) {
+		} else if (strcmp(option, "--listapp") == 0) {
 			ret = __get_installed_app_list();
 			if (ret == -1) {
 				printf("get installed app list failed\n");
-				goto end;
-			} else {
-				goto end;
-			}
-		} else if (strcmp(argv[1], "--listdisabled") == 0) {
-			ret = __get_disabled_pkg_list();
-			if (ret == -1) {
-				printf("get disabled pkg list failed\n");
 				goto end;
 			} else {
 				goto end;
@@ -2279,21 +2083,21 @@ int main(int argc, char *argv[])
 			goto end;
 		}
 	}else if (argc == 4) {
-		if (strcmp(argv[1], "--setappenabled") == 0) {
+		if (strcmp(option, "--setappenabled") == 0) {
 			ret = __set_app_enabled(argv[2], (strcmp(argv[3], "0")==0)?false:true);
 			if (ret == -1) {
 				printf("set app enabled failed\n");
 				goto end;
 			}
 			goto end;
-		} else if(strcmp(argv[1], "--setpkgenabled") == 0) {
+		} else if(strcmp(option, "--setpkgenabled") == 0) {
 			ret = __set_app_enabled(argv[2], (strcmp(argv[3], "0")==0)?false:true);
 			if (ret == -1) {
 				printf("set pkg enabled failed\n");
 				goto end;
 			}
 			goto end;
-		} else if (strcmp(argv[1], "--cmp-pkgcert") == 0) {
+		} else if (strcmp(option, "--cmp-pkgcert") == 0) {
 			int len = 0;
 			char *r_pkgid = NULL;
 			char *l_pkgid = NULL;
@@ -2319,14 +2123,14 @@ int main(int argc, char *argv[])
 			free(l_pkgid);
 			free(r_pkgid);
 			goto end;
-		} else if (strcmp(argv[1], "--cmp-appcert") == 0) {
+		} else if (strcmp(option, "--cmp-appcert") == 0) {
 			ret = __compare_app_certinfo_from_db(argv[2], argv[3]);
 			if (ret == -1) {
 				printf("compare certinfo from db failed\n");
 				goto end;
 			}
 			goto end;
-		} else if (strcmp(argv[1], "--arg-flt") == 0) {
+		} else if (strcmp(option, "--arg-flt") == 0) {
 			ret = __add_arg_filter(argv[2], argv[3]);
 			if (ret == -1) {
 				printf("compare certinfo from db failed\n");
@@ -2351,85 +2155,85 @@ int main(int argc, char *argv[])
 			goto end;
 	}
 
-	if (strcmp(argv[1], "--pkg") == 0) {
+	if (strcmp(option, "--pkg") == 0) {
 		ret = __get_pkg_info(argv[2]);
 		if (ret == -1) {
 			printf("get pkg info failed\n");
 			goto end;
 		}
-	} else if (strcmp(argv[1], "--app") == 0) {
+	} else if (strcmp(option, "--app") == 0) {
 		ret = __get_app_info(argv[2]);
 		if (ret == -1) {
 			printf("get app info failed\n");
 			goto end;
 		}
-	} else if (strcmp(argv[1], "--list") == 0) {
+	} else if (strcmp(option, "--list") == 0) {
 		ret = __get_app_list(argv[2]);
 		if (ret == -1) {
 			printf("get app list failed\n");
 			goto end;
 		}
-	} else if (strcmp(argv[1], "--imd") == 0) {
-		ret = __insert_manifest_in_db(argv[2]);
-		if (ret == -1) {
-			printf("insert in db failed\n");
-			goto end;
-		}
-	} else if (strcmp(argv[1], "--fota") == 0) {
-		ret = __fota_insert_manifest_in_db(argv[2]);
-		if (ret == -1) {
-			printf("insert in db failed\n");
-			goto end;
-		}
-	} else if (strcmp(argv[1], "--rmd") == 0) {
-		ret = __remove_manifest_from_db(argv[2]);
-		if (ret == -1) {
-			printf("remove from db failed\n");
-			goto end;
-		}
-	} else if (strcmp(argv[1], "--setdb") == 0) {
-		ret = __set_pkginfo_in_db(argv[2]);
-		if (ret == -1) {
-			printf("set pkginfo in db failed\n");
-			goto end;
-		}
-	} else if (strcmp(argv[1], "--setcert") == 0) {
-		ret = __set_certinfo_in_db(argv[2]);
-		if (ret == -1) {
-			printf("set certinfo in db failed\n");
-			goto end;
-		}
-	} else if (strcmp(argv[1], "--getcert") == 0) {
-		ret = __get_certinfo_from_db(argv[2]);
-		if (ret == -1) {
-			printf("get certinfo from db failed\n");
-			goto end;
-		}
-	} else if (strcmp(argv[1], "--delcert") == 0) {
-		ret = __del_certinfo_from_db(argv[2]);
-		if (ret == -1) {
-			printf("del certinfo from db failed\n");
-			goto end;
-		}
-	} else if (strcmp(argv[1], "--check") == 0) {
+	} else if (strcmp(option, "--imd") == 0) {
 		ret = __check_manifest_validation(argv[2]);
 		if (ret == -1) {
 			printf("check manifest failed\n");
 			goto end;
 		}
-	} else if (strcmp(argv[1], "--category") == 0) {
+
+		ret = __insert_manifest_in_db(argv[2]);
+		if (ret == -1) {
+			printf("insert in db failed\n");
+			goto end;
+		}
+	} else if (strcmp(option, "--fota") == 0) {
+		ret = __fota_insert_manifest_in_db(argv[2]);
+		if (ret == -1) {
+			printf("insert in db failed\n");
+			goto end;
+		}
+	} else if (strcmp(option, "--rmd") == 0) {
+		ret = __remove_manifest_from_db(argv[2]);
+		if (ret == -1) {
+			printf("remove from db failed\n");
+			goto end;
+		}
+	} else if (strcmp(option, "--setcert") == 0) {
+		ret = __set_certinfo_in_db(argv[2]);
+		if (ret == -1) {
+			printf("set certinfo in db failed\n");
+			goto end;
+		}
+	} else if (strcmp(option, "--getcert") == 0) {
+		ret = __get_certinfo_from_db(argv[2]);
+		if (ret == -1) {
+			printf("get certinfo from db failed\n");
+			goto end;
+		}
+	} else if (strcmp(option, "--delcert") == 0) {
+		ret = __del_certinfo_from_db(argv[2]);
+		if (ret == -1) {
+			printf("del certinfo from db failed\n");
+			goto end;
+		}
+	} else if (strcmp(option, "--check") == 0) {
+		ret = __check_manifest_validation(argv[2]);
+		if (ret == -1) {
+			printf("check manifest failed\n");
+			goto end;
+		}
+	} else if (strcmp(option, "--category") == 0) {
 		ret = __get_app_category_list(argv[2]);
 		if (ret == -1) {
 			printf("get app category list failed\n");
 			goto end;
 		}
-	} else if (strcmp(argv[1], "--metadata") == 0) {
+	} else if (strcmp(option, "--metadata") == 0) {
 		ret = __get_app_metadata_list(argv[2]);
 		if (ret == -1) {
 			printf("get app metadata list failed\n");
 			goto end;
 		}
-	}  else if (strcmp(argv[1], "--appcontrol") == 0) {
+	}  else if (strcmp(option, "--appcontrol") == 0) {
 		ret = __get_app_control_list(argv[2]);
 		if (ret == -1) {
 			printf("get app control list failed\n");

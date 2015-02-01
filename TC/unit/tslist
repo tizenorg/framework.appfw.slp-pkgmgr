@@ -1,7 +1,6 @@
 /unit/utc_ApplicationFW_pkgmgr_info_new_func
 /unit/utc_ApplicationFW_pkgmgr_info_free_func
 /unit/utc_ApplicationFW_pkgmgr_get_pkg_list_func
-/unit/utc_ApplicationFW_pkgmgr_info_new_from_file_func
 /unit/utc_ApplicationFW_pkgmgr_info_get_string_func
 /unit/utc_ApplicationFW_pkgmgr_client_listen_status_func
 /unit/utc_ApplicationFW_pkgmgr_client_broadcast_status_func

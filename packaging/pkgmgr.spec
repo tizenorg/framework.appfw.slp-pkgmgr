@@ -1,20 +1,11 @@
-#sbs-git:slp/pkgs/s/slp-pkgmgr pkgmgr 0.1.103 29b53909a5d6e8728429f0a188177eac691cb6ce
 Name:       pkgmgr
 Summary:    Packager Manager client library package
-Version:    0.2.166
+Version:    0.3.37
 Release:    1
 Group:      System/Libraries
 License:    Apache License, Version 2.0
 Source0:    %{name}-%{version}.tar.gz
-Source1:	pkgmgr_recovery-wearable.service
-Source2:	pkgmgr_recovery-mobile.service
-Source101:	pkgmgr-wearable.manifest
-Source102:	pkgmgr-mobile.manifest
-Source103:	pkgmgr-server-wearable.manifest
-Source104:	pkgmgr-server-mobile.manifest
-Source105:	pkgmgr-client.manifest
-Source106:	pkgmgr-installer.manifest
-
+Source1:	pkgmgr_recovery.service
 BuildRequires:  cmake
 BuildRequires:  unzip
 BuildRequires:  gettext-tools
@@ -26,15 +17,17 @@ BuildRequires:  pkgconfig(gio-2.0)
 BuildRequires:  pkgconfig(dbus-1)
 BuildRequires:  pkgconfig(dbus-glib-1)
 BuildRequires:  pkgconfig(dlog)
-BuildRequires:  pkgconfig(ail)
 BuildRequires:  pkgconfig(bundle)
 BuildRequires:  pkgconfig(appcore-efl)
 BuildRequires:  pkgconfig(pkgmgr-info)
 BuildRequires:  pkgconfig(iniparser)
+BuildRequires:  pkgconfig(minizip)
+BuildRequires:  pkgconfig(xdgmime)
 BuildRequires:  pkgmgr-info-parser-devel
 BuildRequires:  pkgmgr-info-parser
 BuildRequires:  python-xml
-
+BuildRequires:  tizen-locale
+BuildRequires:  libfile-devel
 
 %description
 Packager Manager client library package for packaging
@@ -65,6 +58,7 @@ Package Manager client library develpoment package for packaging
 %package server
 Summary:    Package Manager server
 Group:      TO_BE/FILLED_IN
+BuildRequires:  pkgconfig(libsmack)
 Requires:   %{name} = %{version}-%{release}
 
 %description server
@@ -100,14 +94,6 @@ Package Manager client types develpoment package for packaging
 
 %prep
 %setup -q
-%if 0%{?tizen_profile_wearable}
-		cp %{SOURCE101} ./pkgmgr.manifest
-		cp %{SOURCE103} ./pkgmgr-server.manifest
-%else if 0%{?tizen_profile_mobile}
-		cp %{SOURCE102} ./pkgmgr.manifest
-		cp %{SOURCE104} ./pkgmgr-server.manifest
-%endif
-cp %{SOURCE105} %{SOURCE106} .
 
 %if 0%{?tizen_build_binary_release_type_eng}
 export CFLAGS="$CFLAGS -DTIZEN_ENGINEER_MODE"
@@ -115,14 +101,7 @@ export CXXFLAGS="$CXXFLAGS ?DTIZEN_ENGINEER_MODE"
 export FFLAGS="$FFLAGS -DTIZEN_ENGINEER_MODE"
 %endif
 
-%if 0%{?tizen_profile_wearable}
-cmake . -DDEVICE_PROFILE=wearable -DCMAKE_INSTALL_PREFIX=%{_prefix}
-%else if 0%{?tizen_profile_mobile}
-cmake . -DDEVICE_PROFILE=mobile -DCMAKE_INSTALL_PREFIX=%{_prefix}
-%else
 cmake . -DCMAKE_INSTALL_PREFIX=%{_prefix}
-%endif
-
 
 %build
 
@@ -139,22 +118,29 @@ cp LICENSE %{buildroot}/usr/share/license/%{name}-installer
 cp LICENSE %{buildroot}/usr/share/license/%{name}-server
 
 mkdir -p %{buildroot}%{_libdir}/systemd/system/multi-user.target.wants
-%if 0%{?tizen_profile_wearable}
 install -m 0644 %SOURCE1 %{buildroot}%{_libdir}/systemd/system/pkgmgr_recovery.service
 ln -s ../pkgmgr_recovery.service %{buildroot}%{_libdir}/systemd/system/multi-user.target.wants/pkgmgr_recovery.service
-%else if 0%{?tizen_profile_mobile}
-install -m 0644 %SOURCE2 %{buildroot}%{_libdir}/systemd/system/pkgmgr_recovery.service
-ln -s ../pkgmgr_recovery.service %{buildroot}%{_libdir}/systemd/system/multi-user.target.wants/pkgmgr_recovery.service
-%endif
 
 %post
 /sbin/ldconfig
 
 mkdir -p /usr/etc/package-manager/backend
 mkdir -p /usr/etc/package-manager/backendlib
+mkdir -p /usr/etc/package-manager/soft-reset
 mkdir -p /etc/opt/upgrade
 
 vconftool set -t int memory/pkgmgr/status "0" -f -s system::vconf_inhouse
+
+touch /usr/etc/package-manager/backend/junk
+chmod 755 /usr/etc/package-manager/backend/junk
+touch /usr/etc/package-manager/backend/pkg
+chmod 755 /usr/etc/package-manager/backend/pkg
+touch /usr/etc/package-manager/backend/getsize
+chmod 755 /usr/etc/package-manager/backend/getsize
+
+touch /usr/etc/package-manager/backend/clearcache
+chmod 755 /usr/etc/package-manager/backend/clearcache
+
 
 # For pkgmgr-install:
 # Update mime database to support package mime types
@@ -167,11 +153,18 @@ mkdir -p /opt/share/packages
 mkdir -p /opt/share/packages/.recovery/pkgmgr
 mkdir -p /opt/share/packages/.recovery/tpk
 mkdir -p /opt/share/packages/.recovery/wgt
-mkdir -p /opt/share/packages/.recovery/fota
+
+#log directory for pkgmr
+mkdir -p /opt/usr/data/pkgmgr/fota
+chown -R 5000:5000 /opt/usr/data/pkgmgr
 
 mkdir -p /usr/share/applications
 mkdir -p /opt/share/applications
 mkdir -p /opt/dbspace/
+
+#signing. find-auto-sign.sh is installed when signing-client git is installed.
+#checks app's sign in /usr/apps, if not signature file, call singing client.
+#/usr/bin/signing-client/find-auto-sign.sh
 
 pkg_initdb
 
@@ -181,6 +174,23 @@ chsmack -a 'ail::db' /opt/dbspace/.app_info.db*
 chsmack -a '_' /usr/etc/package-manager/pkg_path.conf
 
 rm -rf /opt/usr/apps/tmp/pkgmgr_tmp.txt
+
+# Remove locales not supported
+LOCALE_DIR_LIST=/tmp/LC_MESSAGES.lst
+SUPPORTED_LOCALE_LIST=`locale -a | sed -ne "/\w*_\w*/{s/@.*//;s/\..*//p}"`
+REMOVED_FILE_LIST=/usr/share/removed-file.lst
+find / -type d -name "LC_MESSAGES" > $LOCALE_DIR_LIST
+for SUPPORTED_LOCALE in $SUPPORTED_LOCALE_LIST
+do
+	sed -i "/\/${SUPPORTED_LOCALE}\/LC_MESSAGES/d" $LOCALE_DIR_LIST
+	sed -i "/\/${SUPPORTED_LOCALE%%_*}\/LC_MESSAGES/d" $LOCALE_DIR_LIST
+done
+for LOCALE_DIR in `cat $LOCALE_DIR_LIST | sed "s/LC_MESSAGES//"`
+do
+	find $LOCALE_DIR >> $REMOVED_FILE_LIST && rm -rf $LOCALE_DIR
+done
+echo "The list of removed files has saved at $REMOVED_FILE_LIST"
+rm -f $LOCALE_DIR_LIST
 
 %post server
 
@@ -202,7 +212,12 @@ mkdir -p /usr/etc/package-manager/server
 %{_bindir}/pkg_initdb
 %{_bindir}/pkg_fota
 %{_bindir}/pkg_getsize
+%{_bindir}/pkg_getjunkinfo
+%{_bindir}/pkg_clearcache
+%{_bindir}/test_junk
+%{_bindir}/pkg_mkext
 %{_bindir}/pkginfo
+%{_bindir}/pkg
 %{_bindir}/pkgmgr-install
 %{_datadir}/packages/com.samsung.pkgmgr-install.xml
 %{_datadir}/mime/packages/mime.wac.xml
@@ -212,10 +227,12 @@ mkdir -p /usr/etc/package-manager/server
 %exclude %{_includedir}/pkgmgr/comm_client.h
 %exclude %{_includedir}/pkgmgr/comm_config.h
 %exclude %{_includedir}/pkgmgr/comm_status_broadcast_server.h
+%{_includedir}/junk-manager.h
 %exclude %{_libdir}/libpkgmgr_backend_lib_sample.so
 %exclude /usr/etc/package-manager/server/queue_status
 %attr(0700,root,root) /etc/opt/upgrade/710.pkgmgr.patch.sh
 %attr(0700,root,root) /usr/etc/package-manager/pkg_recovery.sh
+%attr(0700,root,root) /usr/etc/package-manager/pkgmgr-soft-reset-ui.sh
 %{_libdir}/systemd/system/multi-user.target.wants/pkgmgr_recovery.service
 %{_libdir}/systemd/system/pkgmgr_recovery.service
 /usr/share/license/%{name}
@@ -230,8 +247,8 @@ mkdir -p /usr/etc/package-manager/server
 %files client-devel
 %defattr(-,root,root,-)
 %{_includedir}/package-manager.h
-%{_includedir}/pkgmgr-dbinfo.h
 %{_libdir}/pkgconfig/pkgmgr.pc
+%{_libdir}/pkgconfig/junkmgr.pc
 %{_libdir}/libpkgmgr-client.so
 
 %files server

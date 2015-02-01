@@ -94,6 +94,7 @@ comm_socket *_comm_socket_new(void)
 int _comm_socket_free(comm_socket *cs)
 {
 	CHK_CS_RET(-EINVAL);
+	close(cs->sockfd);
 	free(cs);
 	return 0;
 }

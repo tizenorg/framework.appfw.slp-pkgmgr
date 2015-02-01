@@ -19,13 +19,14 @@
  *
  */
 
-#ifndef __PKGMGR_DEBUG_H__
-#define __PKGMGR_DEBUG_H__
+#ifndef __PKG_MANAGER_DEBUG_H__
+#define __PKG_MANAGER_DEBUG_H__
 
 #include <dlog.h>
 
 #define _LOGE(fmt, arg...) LOGE(fmt, ##arg)
 #define _LOGD(fmt, arg...) LOGD(fmt, ##arg)
+#define _LOGS(fmt, arg...) SECURE_LOGD(fmt, ##arg)
 
 
 #define COLOR_RED 		"\033[0;31m"
@@ -104,4 +105,4 @@
 			 } \
 		 } while (0)
 
-#endif  /* __PKGMGR_DEBUG_H__ */
+#endif  /* __PKG_MANAGER_DEBUG_H__ */

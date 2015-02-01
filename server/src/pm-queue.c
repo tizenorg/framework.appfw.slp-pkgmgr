@@ -57,12 +57,6 @@ static int __is_pkg_supported(char *pkgtype)
 	queue_info_map *ptr = NULL;
 	ptr = start;
 	int i = 0;
-	/*
-	If package type is eflwgt then return true as there is no separate backend for eflwgt.
-	It is handled by efltpk backend.
-	*/
-	if(!strcmp(pkgtype,"eflwgt" ))
-		return 1;
 
 	for(i = 0; i < entries; i++)
 	{
@@ -187,6 +181,21 @@ int _pm_queue_init()
 	}
 	/*Add entries to info map.*/
 	ptr = (queue_info_map*)calloc(c , sizeof(queue_info_map));
+	if(ptr == NULL){
+		fprintf(stderr,"calloc failed!!");
+		n = i;
+		while(n--){
+			if(namelist[n]){
+				free(namelist[n]);
+				namelist[n] = NULL;
+			}
+		}
+		if(namelist){
+			free(namelist);
+			namelist = NULL;
+		}
+		return -1;
+	}
 	memset(ptr, '\0', c * sizeof(queue_info_map));
 	start = ptr;
 	for(n = 0; n < c ; n++)
@@ -203,21 +212,29 @@ int _pm_queue_init()
 	{
 		if(!strcmp(namelist[n]->d_name, ".") ||
 			!strcmp(namelist[n]->d_name, ".."))
-				continue;
+		{
+			free(namelist[n]);
+			continue;
+		}
 		snprintf(abs_filename, MAX_PKG_NAME_LEN, "%s/%s",
 			BACKEND_INFO_DIR, namelist[n]->d_name);
 		if (lstat(abs_filename, &fileinfo) < 0) {
 			perror(abs_filename);
+			free(namelist);
 			return -1;
 		}
 		if (S_ISDIR(fileinfo.st_mode))
+		{
+			free(namelist[n]);
 			continue;
+		}
 		/*Found backend*/
 		if (S_ISLNK(fileinfo.st_mode)) {
 			/*found a symlink*/
 			ret = readlink(abs_filename, buf, MAX_PKG_NAME_LEN - 1);
 			if (ret == -1) {
 				perror("readlink");
+				free(namelist);
 				return -1;
 			}
 			buf[ret] = '\0';
@@ -282,7 +299,7 @@ int _pm_queue_push(pm_dbus_msg *item)
 	data = _add_node();
 	if (!data) {		/* fail to allocate mem */
 		fprintf(stderr, "Fail to allocate memory\n");
-		return -1;
+		return -2;
 	}
 
 	strncpy(data->msg->req_id, item->req_id, strlen(item->req_id));

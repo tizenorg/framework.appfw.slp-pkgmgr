@@ -34,7 +34,6 @@
 #include <dlfcn.h>
 #include <sys/types.h>
 #include <glib.h>
-#include <ail.h>
 #include <glib-object.h>
 #include <pkgmgr-info.h>
 #include "package-manager.h"
@@ -42,6 +41,8 @@
 
 #define PKG_TOOL_VERSION	"0.1"
 #define APP_INSTALLATION_PATH_RW	"/opt/usr/apps"
+
+static pkgmgr_client *gpc = NULL;
 
 static int __process_request();
 static void __print_usage();
@@ -54,7 +55,7 @@ static int __return_cb(int req_id, const char *pkg_type, const char *pkgid,
 static int __convert_to_absolute_path(char *path);
 
 /* Supported options */
-const char *short_options = "iurmcgCkaADL:lsd:p:t:n:T:S:qh";
+const char *short_options = "iurmcgxCkaADL:Rlsd:p:t:n:T:S:qh";
 const struct option long_options[] = {
 	{"install", 0, NULL, 'i'},
 	{"uninstall", 0, NULL, 'u'},
@@ -65,6 +66,7 @@ const struct option long_options[] = {
 	{"activate", 0, NULL, 'A'},
 	{"deactivate", 0, NULL, 'D'},
 	{"activate with Label", 1, NULL, 'L'},
+	{"reset device", 1, NULL, 'R'},
 	{"check", 0, NULL, 'C'},
 	{"kill", 0, NULL, 'k'},
 	{"app-path", 0, NULL, 'a'},
@@ -79,6 +81,7 @@ const struct option long_options[] = {
 	{"csc", 1, NULL, 'S'},
 	{"quiet", 0, NULL, 'q'},
 	{"help", 0, NULL, 'h'},
+	{"get_pkg_size_info", 0, NULL, 'x'},
 	{0, 0, 0, 0}		/* sentinel */
 };
 
@@ -97,7 +100,9 @@ enum pm_tool_request_e {
 	KILLAPP_REQ,
 	LIST_REQ,
 	SHOW_REQ,
-	HELP_REQ
+	HELP_REQ,
+	GET_PKG_SIZE_INFO_REQ,
+	RESET_DEVICE_REQ
 };
 typedef enum pm_tool_request_e req_type;
 
@@ -108,7 +113,6 @@ struct pm_tool_args_t {
 	char pkgid[PKG_NAME_STRING_LEN_MAX];
 	char des_path[PKG_NAME_STRING_LEN_MAX];
 	char label[PKG_NAME_STRING_LEN_MAX];
-	int quiet;
 	int type;
 	int result;
 };
@@ -201,7 +205,7 @@ static int __return_cb(int req_id, const char *pkg_type,
 		ret_val = atoi(val);
 		data.result = ret_val;
 
-		strtok(val, delims);
+		strtok((char*)val, delims);
 		ret_result = strtok(NULL, delims);
 		if (ret_result){
 			extra_str = strdup(ret_result);
@@ -264,32 +268,6 @@ static int __convert_to_absolute_path(char *path)
 
 static int __is_app_installed(char *pkgid)
 {
-#if 0
-	ail_appinfo_h handle;
-	ail_error_e ret;
-	char *str = NULL;
-	ret = ail_package_get_appinfo(pkgid, &handle);
-	if (ret != AIL_ERROR_OK) {
-		return -1;
-	}
-	ret = ail_appinfo_get_str(handle, AIL_PROP_NAME_STR, &str);
-	if (ret != AIL_ERROR_OK) {
-		return -1;
-	}
-	ret = ail_package_destroy_appinfo(handle);
-	if (ret != AIL_ERROR_OK) {
-		return -1;
-	}
-//#else
-	pkgmgr_pkginfo_h handle;
-	int ret = pkgmgr_pkginfo_get_pkginfo(pkgid, &handle);
-	if(ret < 0) {
-		printf("package is not in pkgmgr_info DB\n");
-		return -1;
-	} else
-		pkgmgr_pkginfo_destroy_pkginfo(handle);
-#endif
-
 	return 0;
 }
 
@@ -313,16 +291,15 @@ static void __print_usage()
 	printf("-n, --package-name	provide package name\n");
 	printf("-t, --package-type	provide package type\n");
 	printf("-T, --move-type	provide move type [0 : move to internal /1: move to external]\n");
-	printf("-q, --quiet		quiet mode operation\n");
 	printf("-h, --help		print this help\n\n");
 
-	printf("Usage: pkgcmd [options] (--quiet)\n");
-	printf("pkgcmd -i -t <pkg type> (-d <descriptor path>) -p <pkg path> (-q)\n");
-	printf("pkgcmd -u -n <pkgid> (-q)\n");
+	printf("Usage: pkgcmd [options] \n");
+	printf("pkgcmd -i -t <pkg type> (-d <descriptor path>) -p <pkg path> \n");
+	printf("pkgcmd -u -n <pkgid> \n");
 	printf("pkgcmd -r -t <pkg type> -n <pkgid> \n");
 	printf("pkgcmd -l (-t <pkg type>) \n");
-	printf("pkgcmd -s -t <pkg type> -p <pkg path> (-q)\n");
-	printf("pkgcmd -s -t <pkg type> -n <pkg name> (-q)\n");
+	printf("pkgcmd -s -t <pkg type> -p <pkg path> \n");
+	printf("pkgcmd -s -t <pkg type> -n <pkg name> \n");
 	printf("pkgcmd -m -T <move type> -n <pkg name>\n\n");
 	printf("pkgcmd -g -T <getsize type> -n <pkgid> \n");
 	printf("pkgcmd -C -n <pkgid> \n");
@@ -365,6 +342,12 @@ static void __print_pkg_info(pkgmgr_info *pkg_info)
 	temp = pkgmgr_info_get_string(pkg_info, "version");
 	if (temp) {
 		printf("version : %s\n", temp);
+		free(temp);
+	}
+
+	temp = pkgmgr_info_get_string(pkg_info, "api_version");
+	if (temp) {
+		printf("api_version : %s\n", temp);
 		free(temp);
 	}
 
@@ -448,7 +431,7 @@ static void __print_pkg_info(pkgmgr_info *pkg_info)
 	}
 }
 
-static int __pkgmgr_list_cb (const pkgmgr_pkginfo_h handle, void *user_data)
+static int __pkgmgr_list_cb (const pkgmgrinfo_pkginfo_h handle, void *user_data)
 {
 	int ret = -1;
 	char *pkgid = NULL;
@@ -457,22 +440,22 @@ static int __pkgmgr_list_cb (const pkgmgr_pkginfo_h handle, void *user_data)
 	char *pkg_label = NULL;
 	char *pkg_rootpath = NULL;
 
-	ret = pkgmgr_pkginfo_get_pkgid(handle, &pkgid);
+	ret = pkgmgrinfo_pkginfo_get_pkgid(handle, &pkgid);
 	if (ret == -1) {
 		printf("Failed to get pkgmgr_pkginfo_get_pkgid\n");
 		return ret;
 	}
-	ret = pkgmgr_pkginfo_get_type(handle, &pkg_type);
+	ret = pkgmgrinfo_pkginfo_get_type(handle, &pkg_type);
 	if (ret == -1) {
 		printf("Failed to get pkgmgr_pkginfo_get_type\n");
 		return ret;
 	}
-	ret = pkgmgr_pkginfo_get_version(handle, &pkg_version);
+	ret = pkgmgrinfo_pkginfo_get_version(handle, &pkg_version);
 	if (ret == -1) {
 		printf("Failed to get pkgmgr_pkginfo_get_version\n");
 		return ret;
 	}
-	ret = pkgmgr_pkginfo_get_label(handle, &pkg_label);
+	ret = pkgmgrinfo_pkginfo_get_label(handle, &pkg_label);
 	if (ret == -1) {
 		printf("Failed to get pkgmgr_pkginfo_get_label\n");
 		return ret;
@@ -503,7 +486,6 @@ static int __pkgmgr_list_cb (const pkgmgr_pkginfo_h handle, void *user_data)
 static int __pkg_list_cb (const pkgmgrinfo_pkginfo_h handle, void *user_data)
 {
 	int ret = -1;
-	int size = 0;
 	char *pkgid;
 
 	ret = pkgmgrinfo_pkginfo_get_pkgid(handle, &pkgid);
@@ -522,16 +504,40 @@ static int __pkg_list_cb (const pkgmgrinfo_pkginfo_h handle, void *user_data)
 	return 0;
 }
 
+static void __pkg_size_info_recv_cb(pkgmgr_client *pc, const char *pkgid, const pkg_size_info_t *size_info, void *user_data)
+{
+	printf("User get_package_size_info callback called.\n");
+	printf("Internal > data size: %lld, cache size: %lld, app size: %lld\n",
+			size_info->data_size, size_info->cache_size, size_info->app_size);
+	printf("External > data size: %lld, cache size: %lld, app size: %lld\n",
+			size_info->ext_data_size, size_info->ext_cache_size, size_info->ext_app_size);
+
+	pkgmgr_client_free(pc);
+	g_main_loop_quit(main_loop);
+}
+
+static void __total_pkg_size_info_recv_cb(pkgmgr_client *pc, const pkg_size_info_t *size_info, void *user_data)
+{
+	printf("User get_total_package_size_info callback called.\n");
+	printf("Internal > data size: %lld, cache size: %lld, app size: %lld\n",
+			size_info->data_size, size_info->cache_size, size_info->app_size);
+	printf("External > data size: %lld, cache size: %lld, app size: %lld\n",
+			size_info->ext_data_size, size_info->ext_cache_size, size_info->ext_app_size);
+
+	pkgmgr_client_free(pc);
+	g_main_loop_quit(main_loop);
+}
+
 static int __process_request()
 {
 	int ret = -1;
-	int mode = PM_DEFAULT;
+	int mode = PM_QUIET;
 	pkgmgr_client *pc = NULL;
 	char buf[1024] = {'\0'};
 	int pid = -1;
 	switch (data.request) {
 	case INSTALL_REQ:
-		if (data.pkg_type[0] == '\0' || data.pkg_path[0] == '\0') {
+		if (data.pkg_path[0] == '\0') {
 			printf("Please provide the arguments.\n");
 			printf("use -h option to see usage\n");
 			data.result = PKGCMD_ERR_ARGUMENT_INVALID;
@@ -545,10 +551,11 @@ static int __process_request()
 			data.result = PKGCMD_ERR_FATAL_ERROR;
 			break;
 		}
-		if (data.quiet == 0)
-			mode = PM_DEFAULT;
-		else
-			mode = PM_QUIET;
+
+		if (data.pkg_type[0] == '\0') {
+			strncpy(data.pkg_type, "rpm", PKG_TYPE_STRING_LEN_MAX);
+		}
+
 		if (data.des_path[0] == '\0')
 			ret =
 			    pkgmgr_client_install(pc, data.pkg_type, NULL,
@@ -584,10 +591,7 @@ static int __process_request()
 			data.result = PKGCMD_ERR_FATAL_ERROR;
 			break;
 		}
-		if (data.quiet == 0)
-			mode = PM_DEFAULT;
-		else
-			mode = PM_QUIET;
+
 
 		ret = __is_app_installed(data.pkgid);
 		if (ret == -1) {
@@ -624,7 +628,7 @@ static int __process_request()
 			break;
 		}
 
-		mode = PM_QUIET;
+
 		ret = pkgmgr_client_reinstall(pc, data.pkg_type, data.pkgid, NULL, mode, __return_cb, pc);
 		if (ret < 0){
 			data.result = PKGCMD_ERR_FATAL_ERROR;
@@ -650,10 +654,7 @@ static int __process_request()
 			ret = -1;
 			break;
 		}
-		if (data.quiet == 0)
-			mode = PM_DEFAULT;
-		else
-			mode = PM_QUIET;
+
 		ret = __is_app_installed(data.pkgid);
 		if (ret == -1) {
 			printf("package is not installed\n");
@@ -671,11 +672,6 @@ static int __process_request()
 			printf("Please provide the arguments.\n");
 			printf("use -h option to see usage\n");
 			ret = -1;
-			break;
-		}
-
-		if ( strcmp(data.pkg_type, "root") == 0 ) {
-			ret = pkgmgr_client_enable_pkg(data.pkgid);
 			break;
 		}
 
@@ -715,11 +711,6 @@ static int __process_request()
 			printf("Please provide the arguments.\n");
 			printf("use -h option to see usage\n");
 			ret = -1;
-			break;
-		}
-
-		if ( strcmp(data.pkg_type, "root") == 0 ) {
-			ret = pkgmgr_client_disable_pkg(data.pkgid);
 			break;
 		}
 
@@ -830,7 +821,7 @@ static int __process_request()
 		}
 
 		if (data.request == KILLAPP_REQ) {
-			ret = pkgmgr_client_request_service(PM_REQUEST_KILL_APP, NULL, pc, NULL, data.pkgid, NULL, NULL, &pid);
+			ret = pkgmgr_client_request_service(PM_REQUEST_KILL_APP, 0, pc, NULL, data.pkgid, NULL, NULL, &pid);
 			if (ret < 0){
 				data.result = PKGCMD_ERR_FATAL_ERROR;
 				break;
@@ -841,7 +832,7 @@ static int __process_request()
 				printf("Pkgid: %s is already Terminated\n", data.pkgid);
 
 		} else if (data.request == CHECKAPP_REQ) {
-			ret = pkgmgr_client_request_service(PM_REQUEST_CHECK_APP, NULL, pc, NULL, data.pkgid, NULL, NULL, &pid);
+			ret = pkgmgr_client_request_service(PM_REQUEST_CHECK_APP, 0, pc, NULL, data.pkgid, NULL, NULL, &pid);
 			if (ret < 0){
 				data.result = PKGCMD_ERR_FATAL_ERROR;
 				break;
@@ -857,7 +848,7 @@ static int __process_request()
 
 	case LIST_REQ:
 		if (data.pkg_type[0] == '\0') {
-			ret = pkgmgr_pkginfo_get_list(__pkgmgr_list_cb, NULL);
+			ret = pkgmgrinfo_pkginfo_get_list(__pkgmgr_list_cb, NULL);
 			if (ret == -1) {
 				printf("Failed to get package list\n");
 				break;
@@ -900,9 +891,7 @@ static int __process_request()
 			break;
 		}
 		if (data.pkg_path[0] != '\0') {
-			pkgmgr_info *pkg_info =
-			    pkgmgr_info_new_from_file(data.pkg_type,
-						      data.pkg_path);
+			pkgmgr_info *pkg_info =  pkgmgr_client_check_pkginfo_from_file(data.pkg_path);
 			if (pkg_info == NULL) {
 				printf("Failed to get pkginfo handle\n");
 				ret = -1;
@@ -952,6 +941,39 @@ static int __process_request()
 		ret = data.result;
 		break;
 
+	case GET_PKG_SIZE_INFO_REQ:
+		main_loop = g_main_loop_new(NULL, FALSE);
+		gpc = pkgmgr_client_new(PC_REQUEST);
+		if (gpc == NULL) {
+			printf("PkgMgr Client Creation Failed\n");
+			data.result = PKGCMD_ERR_FATAL_ERROR;
+			break;
+		}
+
+		if (strcmp(data.pkgid, PKG_SIZE_INFO_TOTAL) == 0)
+		{
+			ret = pkgmgr_client_get_total_package_size_info(gpc, __total_pkg_size_info_recv_cb, NULL);
+
+		}
+		else
+		{
+			ret = pkgmgr_client_get_package_size_info(gpc, data.pkgid, __pkg_size_info_recv_cb, NULL);
+		}
+		if (ret < 0){
+			data.result = PKGCMD_ERR_FATAL_ERROR;
+			break;
+		}
+
+		printf("pkg[%s] ret: %d\n", data.pkgid, ret);
+		ret = data.result;
+
+		g_main_loop_run(main_loop);
+		break;
+
+	case RESET_DEVICE_REQ:
+		ret = pkgmgr_client_reset_device();
+		break;
+
 	case HELP_REQ:
 		__print_usage();
 		ret = 0;
@@ -973,7 +995,7 @@ static int __process_request()
 static int __is_authorized()
 {
 	/* pkgcmd needs root or developer privileges.
-	   If launched via fork/exec, the launching program 
+	   If launched via fork/exec, the launching program
 	   must be running as root */
 
 	uid_t uid = getuid();
@@ -1011,7 +1033,6 @@ int main(int argc, char *argv[])
 	memset(data.pkgid, '\0', PKG_NAME_STRING_LEN_MAX);
 	memset(data.pkg_type, '\0', PKG_TYPE_STRING_LEN_MAX);
 	memset(data.label, '\0', PKG_TYPE_STRING_LEN_MAX);
-	data.quiet = 0;
 	data.result = 0;
 	data.type = -1;
 	while (1) {
@@ -1040,6 +1061,10 @@ int main(int argc, char *argv[])
 			data.request = GETSIZE_REQ;
 			break;
 
+		case 'x':	/* get pkg size info */
+			data.request = GET_PKG_SIZE_INFO_REQ;
+			break;
+
 		case 'm':	/* move */
 			data.request = MOVE_REQ;
 			break;
@@ -1064,6 +1089,10 @@ int main(int argc, char *argv[])
 			if (optarg)
 				strncpy(data.label, optarg,
 					PKG_NAME_STRING_LEN_MAX);
+			break;
+
+		case 'R':	/* device reset */
+			data.request = RESET_DEVICE_REQ;
 			break;
 
 		case 'a':	/* app installation path */
@@ -1122,10 +1151,6 @@ int main(int argc, char *argv[])
 
 		case 'h':	/* help */
 			data.request = HELP_REQ;
-			break;
-
-		case 'q':	/* quiet mode */
-			data.quiet = 1;
 			break;
 
 			/* Otherwise */

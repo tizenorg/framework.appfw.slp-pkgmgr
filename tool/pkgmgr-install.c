@@ -31,6 +31,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <Ecore.h>	/* for ecore_main_loop_quit() */
 
 #include <appcore-efl.h>
 #include <glib.h>
@@ -128,7 +129,7 @@ int main(int argc, char **argv)
 	memset(&ad, 0x0, sizeof(struct appdata));
 	ops.data = &ad;
 	ad.file_path = file_path;
-	ad.extension = extension;
+	ad.extension = (char*)extension;
 
 
 	int pid = fork();

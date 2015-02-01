@@ -28,25 +28,29 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
-#include <aul.h>
 #include <xdgmime.h>
-
-#include "pkgmgr-internal.h"
-#include "pkgmgr-debug.h"
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <minizip/unzip.h>
 
 #include <unistd.h>
 #include <dlfcn.h>
 #include <sys/time.h>
-#include <ail.h>
-#include <aul.h>
+#include <pkgmgr-info.h>
 
 #include "package-manager.h"
-#include <pkgmgr-info.h>
+#include "package-manager-debug.h"
+#include "package-manager-internal.h"
 
 #undef LOG_TAG
 #ifndef LOG_TAG
 #define LOG_TAG "PKGMGR"
 #endif				/* LOG_TAG */
+
+#define WGT_XML_FILE 		"config.xml"
+#define TPK_XML_FILE 		"info/manifest.xml"
+#define CORE_XML_FILE 		"tizen-manifest.xml"
+#define HYBRID_XML_FILE 	"res/wgt/config.xml"
 
 #define IS_WHITESPACE(CHAR) \
 	((CHAR == ' ' || CHAR == '\t' || CHAR == '\r' || CHAR == '\n') ? \
@@ -163,10 +167,10 @@ char *_get_backend_path_with_type(const char *type)
 		_app_str_trim(buffer);
 
 		if ((path = strstr(buffer, PKG_BACKEND)) != NULL) {
-			_LOGD("[%s]\n", buffer);
-			_LOGD("[%s]\n", path);
+//			_LOGD("[%s]\n", buffer);
+//			_LOGD("[%s]\n", path);
 			path = path + strlen(PKG_BACKEND);
-			_LOGD("[%s]\n", path);
+//			_LOGD("[%s]\n", path);
 
 			break;
 		}
@@ -184,17 +188,9 @@ char *_get_backend_path_with_type(const char *type)
 	snprintf(backend_path, PKG_STRING_LEN_MAX - 1, "%s", path);
 /*	else
        sprintf(backend_path, "%s/", path); */
+	snprintf(installer_path, PKG_STRING_LEN_MAX - 1, "%s%s", backend_path, type);
+	_LOGD("installer_path[%s]\n", installer_path);
 
-	/* eflwgt package is handled by efltpk backend as there is no separate backend for eflwgt */
-	if(!strcmp(type,"eflwgt")){
-		snprintf(installer_path, PKG_STRING_LEN_MAX - 1, 
-						"%sefltpk", backend_path);
-		_LOGD("installer_path[%s]\n", installer_path);
-	}else{
-		snprintf(installer_path, PKG_STRING_LEN_MAX - 1, 
-					"%s%s", backend_path, type);
-		_LOGD("installer_path[%s]\n", installer_path);
-	}
 
 	if (access(installer_path, F_OK) != 0) {
 		char extlist[256] = { '\0', };
@@ -275,28 +271,25 @@ int _get_mime_extension(const char *mimetype, char *ext, int len)
 char *_get_pkg_type_from_desktop_file(const char *pkgid)
 {
 	static char pkg_type[PKG_EXT_LEN_MAX];
-	
-	ail_appinfo_h handle;
-	ail_error_e ret;
-	char *str;
 
-	ret = ail_package_get_appinfo(pkgid, &handle);
-	if (ret != AIL_ERROR_OK) {
+	int ret = 0;
+	char *type = NULL;
+	pkgmgrinfo_pkginfo_h handle = NULL;
+
+	ret = pkgmgrinfo_pkginfo_get_pkginfo(pkgid, &handle);
+	if (ret != PMINFO_R_OK)
+		return NULL;
+
+	ret = pkgmgrinfo_pkginfo_get_type(handle, &type);
+	if (ret != PMINFO_R_OK) {
+		pkgmgrinfo_pkginfo_destroy_pkginfo(handle);
 		return NULL;
 	}
 
-	ret = ail_appinfo_get_str(handle, AIL_PROP_X_SLP_PACKAGETYPE_STR, &str);
-	if (ret != AIL_ERROR_OK) {
-		ail_package_destroy_appinfo(handle);
-		return NULL;
-	}
-	snprintf(pkg_type, sizeof(pkg_type) - 1, str);
+	snprintf(pkg_type, sizeof(pkg_type) - 1, type);
+	_LOGD("pkgid = [%s], pkg type = [%s] \n", pkgid, pkg_type);
 
-	ret = ail_package_destroy_appinfo(handle);
-	if (ret != AIL_ERROR_OK) {
-		return NULL;
-	}
-
+	pkgmgrinfo_pkginfo_destroy_pkginfo(handle);
 	return pkg_type;
 }
 
@@ -371,8 +364,8 @@ pkg_plugin_set *_pkg_plugin_load_library(const char *pkg_type,
 
 	for (i = 0; plugin_set_list[i]; i++) {
 		if (strcmp(plugin_set_list[i]->pkg_type, pkg_type) == 0) {
-			_LOGD("already loaded [%s] is done well \n",
-			      library_path);
+			_LOGD("already loaded [%s] is done well \n", library_path);
+			dlclose(library_handle);
 			goto END;
 		}
 	}
@@ -432,8 +425,6 @@ int _pkg_plugin_get_library_path(const char *pkg_type, char *library_path)
 		_app_str_trim(buffer);
 
 		if ((path = strstr(buffer, PKG_BACKENDLIB)) != NULL) {
-			_LOGD("[%s]\n", buffer);
-			_LOGD("[%s]\n", path);
 			path = path + strlen(PKG_BACKENDLIB);
 			_LOGD("[%s]\n", path);
 
@@ -510,6 +501,7 @@ static detail_info_map_t info_map[] = {
 	{"pkg_type", tmp_pkg_detail_info.pkg_type, "string"},
 	{"pkgid", tmp_pkg_detail_info.pkgid, "string"},
 	{"version", tmp_pkg_detail_info.version, "string"},
+	{"api_version", tmp_pkg_detail_info.api_version, "string"},
 	{"pkg_description", tmp_pkg_detail_info.pkg_description, "string"},
 	{"min_platform_version", tmp_pkg_detail_info.min_platform_version,
 	 "string"},
@@ -606,4 +598,88 @@ time_t _get_info_time(const char *key,
 	return (time_t) -1;
 }
 
+static int __is_rpm_pkg(const char *filename)
+{
+	char *pkg_type = NULL;
+	char pkg_file[PKG_STRING_LEN_MAX] = { '\0', };
 
+	if (strrchr(filename, '/')) {
+		strncpy(pkg_file, strrchr(filename, '/') + 1, PKG_STRING_LEN_MAX - 1);
+	} else {
+		strncpy(pkg_file, filename, PKG_STRING_LEN_MAX - 1);
+	}
+
+	pkg_type = strrchr(pkg_file, '.');
+	if (pkg_type == NULL) {
+		_LOGE("pkg_type is null[%s]", filename);
+		return -1;
+	} else {
+		pkg_type++;
+	}
+
+	if (strcmp(pkg_type, "rpm") == 0) {
+		return 0;
+	} else {
+		return -1;
+	}
+}
+
+API char *_get_type_from_zip(const char *filename)
+{
+	retvm_if(filename == NULL, NULL, "filename is NULL");
+
+	char *pkg_type = NULL;
+	unzFile uf = NULL;
+
+	if (access(filename, F_OK) != 0) {
+		_LOGE("can not access to [%s]", filename);
+		return NULL;
+	}
+
+	// rpm
+	if (__is_rpm_pkg(filename) == 0) {
+		_LOGD("%s is rpm", filename);
+		return strdup("rpm");
+	}
+
+	uf = unzOpen(filename);
+	retvm_if(uf == NULL, NULL, "unzOpen[%s] fail", filename);
+
+
+	//hybrid for web-core
+	if ((unzLocateFile(uf, HYBRID_XML_FILE, 0) == 0) && (unzLocateFile(uf, CORE_XML_FILE, 0) == 0)) {
+		_LOGD("%s is hybrid[web-core]", filename);
+		pkg_type = strdup("wgt");
+
+	//hybrid for web-tpk
+	} else if ((unzLocateFile(uf, HYBRID_XML_FILE, 0) == 0) && (unzLocateFile(uf, TPK_XML_FILE, 0) == 0)) {
+		_LOGD("%s is hybrid[web-tpk]", filename);
+		pkg_type = strdup("wgt");
+
+	//core
+	} else if (unzLocateFile(uf, CORE_XML_FILE, 0) == 0) {
+		_LOGD("%s is core", filename);
+		pkg_type = strdup("coretpk");
+
+	//wgt
+	} else if (unzLocateFile(uf, WGT_XML_FILE, 0) == 0) {
+		_LOGD("%s is wgt", filename);
+		pkg_type = strdup("wgt");
+
+	//tpk
+	} else if (unzLocateFile(uf, TPK_XML_FILE, 0) == 0) {
+		_LOGD("%s is tpk", filename);
+		pkg_type = strdup("tpk");
+
+	//error case
+	} else {
+		_LOGD("%s is not supported", filename);
+	}
+
+	if (uf) {
+		unzCloseCurrentFile(uf);
+		unzClose(uf);
+	}
+
+	return pkg_type;
+}

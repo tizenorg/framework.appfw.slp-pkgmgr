@@ -78,6 +78,7 @@
 #define COMM_PKG_MGR_DBUS_INTERFACE "com.samsung.slp.pkgmgr"
 #define COMM_PKG_MGR_METHOD_REQUEST "Request"
 #define COMM_PKG_MGR_METHOD_ECHO_STRING "EchoString"
+#define COMM_PKG_MGR_METHOD_CREATE_EXTERNAL_DIRECTORY "CreateExternalDirectory"
 
 /* from comm_status_broadcast
  */
@@ -119,6 +120,10 @@
 #define COMM_STATUS_BROADCAST_DBUS_GET_SIZE_INTERFACE "com.samsung.slp.pkgmgr.get.size"
 #define COMM_STATUS_BROADCAST_EVENT_GET_SIZE "get_size"
 
+#define COMM_STATUS_BROADCAST_DBUS_GET_JUNK_INFO_SERVICE_PREFIX "com.samsung.slp.pkgmgr.get.junkinfo"
+#define COMM_STATUS_BROADCAST_DBUS_GET_JUNK_INFO_PATH	"/com/samsung/slp/pkgmgr/get/junkinfo"
+#define COMM_STATUS_BROADCAST_DBUS_GET_JUNK_INFO_INTERFACE "com.samsung.slp.pkgmgr.get.junkinfo"
+#define COMM_STATUS_BROADCAST_EVENT_GET_JUNK_INFO "get_junkinfo"
 
 /********
  * enums
@@ -129,8 +134,20 @@ enum {
 	/* to installer */
 	COMM_REQ_TO_INSTALLER = 1,
 
-	/* to activator */
-	COMM_REQ_TO_ACTIVATOR,
+	/* activate pkg */
+	COMM_REQ_ACTIVATE_PKG,
+
+	/* deactivate pkg */
+	COMM_REQ_DEACTIVATE_PKG,
+
+	/* activate app */
+	COMM_REQ_ACTIVATE_APP,
+
+	/* deactivate app */
+	COMM_REQ_DEACTIVATE_APP,
+
+	/* activate app with label */
+	COMM_REQ_ACTIVATE_APP_WITH_LABEL,
 
 	/* to clearer */
 	COMM_REQ_TO_CLEARER,
@@ -149,6 +166,15 @@ enum {
 
 	/*check app */
 	COMM_REQ_CHECK_APP,
+
+	/* to cache clearer */
+	COMM_REQ_CLEAR_CACHE_DIR,
+
+	/* make external directories for app */
+	COMM_REQ_MAKE_EXTERNAL_DIR,
+
+	/* get junk file information */
+	COMM_REQ_GET_JUNK_INFO,
 
 	COMM_REQ_MAX_SENTINEL
 };
@@ -172,6 +198,7 @@ enum {
 	COMM_STATUS_BROADCAST_INSTALL_PROGRESS,
 	COMM_STATUS_BROADCAST_UPGRADE,
 	COMM_STATUS_BROADCAST_GET_SIZE,
+	COMM_STATUS_BROADCAST_GET_JUNK_INFO,
 	COMM_STATUS_BROADCAST_MAX
 };
 
