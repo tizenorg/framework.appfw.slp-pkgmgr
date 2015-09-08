@@ -37,7 +37,7 @@
 
 #define BACKEND_INFO_DIR	"/usr/etc/package-manager/backend"
 
-static pm_queue_data *__get_head_from_pkgtype(pm_dbus_msg item);
+static pm_queue_data *__get_head_from_pkgtype(pm_dbus_msg *item);
 static void __update_head_from_pkgtype(pm_queue_data *data);
 static int __entry_exist(char *backend);
 static int __is_pkg_supported(char *pkgtype);
@@ -57,6 +57,7 @@ static int __is_pkg_supported(char *pkgtype)
 	queue_info_map *ptr = NULL;
 	ptr = start;
 	int i = 0;
+
 	for(i = 0; i < entries; i++)
 	{
 		if (!strncmp(ptr->pkgtype, pkgtype, MAX_PKG_TYPE_LEN))
@@ -80,15 +81,12 @@ static int __entry_exist(char *backend)
 	int i = 0;
 	for(i = 0; i < entries; i++)
 	{
-		if(ptr->backend) {
-			if (!strncmp(ptr->backend, backend, MAX_PKG_NAME_LEN))
-				return ptr->queue_slot;
-			else {
-				ptr++;
-				continue;
-			}
+		if (!strncmp(ptr->backend, backend, MAX_PKG_NAME_LEN))
+			return ptr->queue_slot;
+		else {
+			ptr++;
+			continue;
 		}
-		ptr++;
 	}
 	return -1;
 }
@@ -103,17 +101,14 @@ static void __update_head_from_pkgtype(pm_queue_data *data)
 	int i = 0;
 	for(i = 0; i < entries; i++)
 	{
-		if(ptr->pkgtype && !ptr->head) {
-			if (!strncmp(ptr->pkgtype, data->msg->pkg_type, MAX_PKG_TYPE_LEN)) {
-				ptr->head = data;
-				slot = ptr->queue_slot;
-			}
-			else {
-				ptr++;
-				continue;
-			}
+		if (!strncmp(ptr->pkgtype, data->msg->pkg_type, MAX_PKG_TYPE_LEN)) {
+			ptr->head = data;
+			slot = ptr->queue_slot;
 		}
-		ptr++;
+		else {
+			ptr++;
+			continue;
+		}
 	}
 	/*update head for each duplicate entry*/
 	ptr = start;
@@ -128,22 +123,19 @@ static void __update_head_from_pkgtype(pm_queue_data *data)
 }
 
 /*Gets the queue head based on pkg type*/
-static pm_queue_data *__get_head_from_pkgtype(pm_dbus_msg item)
+static pm_queue_data *__get_head_from_pkgtype(pm_dbus_msg *item)
 {
 	queue_info_map *ptr = NULL;
 	ptr = start;
 	int i = 0;
 	for(i = 0; i < entries; i++)
 	{
-		if(ptr->pkgtype) {
-			if (!strncmp(ptr->pkgtype, item.pkg_type, MAX_PKG_TYPE_LEN))
-				return ptr->head;
-			else {
-				ptr++;
-				continue;
-			}
+		if (!strncmp(ptr->pkgtype, item->pkg_type, MAX_PKG_TYPE_LEN))
+			return ptr->head;
+		else {
+			ptr++;
+			continue;
 		}
-		ptr++;
 	}
 	return NULL;
 
@@ -189,6 +181,21 @@ int _pm_queue_init()
 	}
 	/*Add entries to info map.*/
 	ptr = (queue_info_map*)calloc(c , sizeof(queue_info_map));
+	if(ptr == NULL){
+		fprintf(stderr,"calloc failed!!");
+		n = i;
+		while(n--){
+			if(namelist[n]){
+				free(namelist[n]);
+				namelist[n] = NULL;
+			}
+		}
+		if(namelist){
+			free(namelist);
+			namelist = NULL;
+		}
+		return -1;
+	}
 	memset(ptr, '\0', c * sizeof(queue_info_map));
 	start = ptr;
 	for(n = 0; n < c ; n++)
@@ -205,21 +212,29 @@ int _pm_queue_init()
 	{
 		if(!strcmp(namelist[n]->d_name, ".") ||
 			!strcmp(namelist[n]->d_name, ".."))
-				continue;
+		{
+			free(namelist[n]);
+			continue;
+		}
 		snprintf(abs_filename, MAX_PKG_NAME_LEN, "%s/%s",
 			BACKEND_INFO_DIR, namelist[n]->d_name);
 		if (lstat(abs_filename, &fileinfo) < 0) {
 			perror(abs_filename);
+			free(namelist);
 			return -1;
 		}
 		if (S_ISDIR(fileinfo.st_mode))
+		{
+			free(namelist[n]);
 			continue;
+		}
 		/*Found backend*/
 		if (S_ISLNK(fileinfo.st_mode)) {
 			/*found a symlink*/
 			ret = readlink(abs_filename, buf, MAX_PKG_NAME_LEN - 1);
 			if (ret == -1) {
 				perror("readlink");
+				free(namelist);
 				return -1;
 			}
 			buf[ret] = '\0';
@@ -268,13 +283,13 @@ int _pm_queue_init()
 	return 0;
 }
 
-int _pm_queue_push(pm_dbus_msg item)
+int _pm_queue_push(pm_dbus_msg *item)
 {
 	pm_queue_data *data = NULL;
 	pm_queue_data *cur = NULL;
 	pm_queue_data *tmp = NULL;
 	int ret = 0;
-	ret = __is_pkg_supported(item.pkg_type);
+	ret = __is_pkg_supported(item->pkg_type);
 	if (ret == 0)
 		return -1;
 
@@ -284,15 +299,15 @@ int _pm_queue_push(pm_dbus_msg item)
 	data = _add_node();
 	if (!data) {		/* fail to allocate mem */
 		fprintf(stderr, "Fail to allocate memory\n");
-		return -1;
+		return -2;
 	}
 
-	strncpy(data->msg->req_id, item.req_id, strlen(item.req_id));
-	data->msg->req_type = item.req_type;
-	strncpy(data->msg->pkg_type, item.pkg_type, strlen(item.pkg_type));
-	strncpy(data->msg->pkg_name, item.pkg_name, strlen(item.pkg_name));
-	strncpy(data->msg->args, item.args, strlen(item.args));
-	strncpy(data->msg->cookie, item.cookie, strlen(item.cookie));
+	strncpy(data->msg->req_id, item->req_id, strlen(item->req_id));
+	data->msg->req_type = item->req_type;
+	strncpy(data->msg->pkg_type, item->pkg_type, strlen(item->pkg_type));
+	strncpy(data->msg->pkgid, item->pkgid, strlen(item->pkgid));
+	strncpy(data->msg->args, item->args, strlen(item->args));
+	strncpy(data->msg->cookie, item->cookie, strlen(item->cookie));
 
 	data->next = NULL;
 
@@ -311,13 +326,21 @@ int _pm_queue_push(pm_dbus_msg item)
 }
 
 /*pop request from queue slot "position" */
-pm_dbus_msg _pm_queue_pop(int position)
+pm_dbus_msg *_pm_queue_pop(int position)
 {
-	pm_dbus_msg ret;
+	pm_dbus_msg *ret;
 	pm_queue_data *cur = NULL;
 	pm_queue_data *saveptr = NULL;
 	queue_info_map *ptr = start;
 	int i = 0;
+
+	ret = (pm_dbus_msg *) malloc(sizeof(pm_dbus_msg));
+	if (!ret) {
+		fprintf(stderr, "Mem alloc error\n");
+		return NULL;
+	}
+	memset(ret, 0x00, sizeof(pm_dbus_msg));
+
 	for(i = 0; i < entries; i++)
 	{
 		if (ptr->queue_slot == position) {
@@ -326,19 +349,18 @@ pm_dbus_msg _pm_queue_pop(int position)
 		}
 		ptr++;
 	}
-	memset(&ret, 0x00, sizeof(pm_dbus_msg));
 
 	if (!cur) {		/* queue is empty */
-		ret.req_type = -1;
+		ret->req_type = -1;
 		return ret;
 	}
 
-	strncpy(ret.req_id, cur->msg->req_id, strlen(cur->msg->req_id));
-	ret.req_type = cur->msg->req_type;
-	strncpy(ret.pkg_type, cur->msg->pkg_type, strlen(cur->msg->pkg_type));
-	strncpy(ret.pkg_name, cur->msg->pkg_name, strlen(cur->msg->pkg_name));
-	strncpy(ret.args, cur->msg->args, strlen(cur->msg->args));
-	strncpy(ret.cookie, cur->msg->cookie, strlen(cur->msg->cookie));
+	strncpy(ret->req_id, cur->msg->req_id, strlen(cur->msg->req_id));
+	ret->req_type = cur->msg->req_type;
+	strncpy(ret->pkg_type, cur->msg->pkg_type, strlen(cur->msg->pkg_type));
+	strncpy(ret->pkgid, cur->msg->pkgid, strlen(cur->msg->pkgid));
+	strncpy(ret->args, cur->msg->args, strlen(cur->msg->args));
+	strncpy(ret->cookie, cur->msg->cookie, strlen(cur->msg->cookie));
 
 	ptr->head = cur->next;
 	saveptr = ptr->head;
@@ -357,32 +379,6 @@ pm_dbus_msg _pm_queue_pop(int position)
 	return ret;
 }
 
-/* This function is not required*/
-#if 0
-pm_dbus_msg _pm_queue_get_head()
-{
-	pm_dbus_msg ret;
-	pm_queue_data *cur = NULL;
-
-	cur = head;
-
-	memset(&ret, 0x00, sizeof(pm_dbus_msg));
-
-	if (!head) {		/* queue is empty */
-		ret.req_type = -1;
-		return ret;
-	}
-
-	strncpy(ret.req_id, cur->msg->req_id, strlen(cur->msg->req_id));
-	ret.req_type = cur->msg->req_type;
-	strncpy(ret.pkg_type, cur->msg->pkg_type, strlen(cur->msg->pkg_type));
-	strncpy(ret.pkg_name, cur->msg->pkg_name, strlen(cur->msg->pkg_name));
-	strncpy(ret.args, cur->msg->args, strlen(cur->msg->args));
-	strncpy(ret.cookie, cur->msg->cookie, strlen(cur->msg->cookie));
-
-	return ret;
-}
-#endif
 /*populate an array of all queue heads and delete them one by one*/
 void _pm_queue_final()
 {
@@ -392,9 +388,14 @@ void _pm_queue_final()
 	pm_queue_data *cur = NULL;
 	pm_queue_data *tail = NULL;
 	pm_queue_data *prev = NULL;
-	pm_queue_data *head[num_of_backends];
+	pm_queue_data *head[MAX_QUEUE_NUM] = {NULL,};
 	queue_info_map *ptr = NULL;
 	ptr = start;
+
+	for(i = 0; i < num_of_backends; i++)
+	{
+		head[i] = NULL;
+	}
 
 	for(i = 0; i < entries; i++)
 	{
@@ -422,13 +423,11 @@ void _pm_queue_final()
 			cur = head[c]->next;
 
 			while (cur->next) {
-				printf(" -- [%p]\n", cur);
 				prev = cur;
 				cur = cur->next;
 			}
 
 			tail = cur;
-			printf("%p\n", tail);
 
 			free(tail->msg);
 			free(tail);
@@ -470,7 +469,7 @@ pm_queue_data *_add_node()
 	return newnode;
 }
 
-void _pm_queue_delete(pm_dbus_msg item)
+void _pm_queue_delete(pm_dbus_msg *item)
 {
 	/* Assume that pacakge name is unique */
 	pm_queue_data *cur = NULL;
@@ -479,7 +478,7 @@ void _pm_queue_delete(pm_dbus_msg item)
 	prev = cur;
 	if (cur) {
 		while (cur->next) {
-			if (!strcmp(item.pkg_name, cur->msg->pkg_name)) {
+			if (!strcmp(item->pkgid, cur->msg->pkgid)) {
 				prev->next = cur->next;
 				free(cur->msg);
 				free(cur);
@@ -491,7 +490,7 @@ void _pm_queue_delete(pm_dbus_msg item)
 	}
 }
 
-void _save_queue_status(pm_dbus_msg item, char *status)
+void _save_queue_status(pm_dbus_msg *item, char *status)
 {
 	FILE *fp_status = NULL;
 
@@ -502,9 +501,7 @@ void _save_queue_status(pm_dbus_msg item, char *status)
 	}
 
 	fprintf(fp_status, "%s\n", status);
-	printf("[%s]\n", status);
-	fprintf(fp_status, "%s\n", item.pkg_type);
-	printf("[%s]\n", item.pkg_type);
+	fprintf(fp_status, "%s\n", item->pkg_type);
 
 	fsync(fp_status->_fileno);
 	fclose(fp_status);
@@ -525,18 +522,10 @@ void _print_queue(int position)
 	}
 	int index = 1;
 	if (!cur) {
-		printf(" ** queue is NULL **\n");
 		return;
 	}
 
 	while (cur) {
-		printf(" * queue[%d]: [%s] [%d] [%s] [%s] [%s] [%s]\n",
-		       index,
-		       cur->msg->req_id,
-		       cur->msg->req_type,
-		       cur->msg->pkg_type,
-		       cur->msg->pkg_name, cur->msg->args, cur->msg->cookie);
-
 		index++;
 		cur = cur->next;
 	}

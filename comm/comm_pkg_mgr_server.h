@@ -40,10 +40,15 @@ API GType pkg_mgr_object_get_type(void);
 
 typedef void (*request_callback) (void *cb_data, const char *req_id,
 				  const int req_type, const char *pkg_type,
-				  const char *pkg_name, const char *args,
+				  const char *pkgid, const char *args,
 				  const char *cookie, int *ret);
 
+typedef int (*create_directory_cb) (void);
+
 API void pkg_mgr_set_request_callback(PkgMgrObject *obj,
-				      request_callback req_cb, void *cb_data);
+		request_callback req_cb, void *cb_data);
+
+API void pkg_mgr_set_callback_to_create_directory(PkgMgrObject *obj,
+		create_directory_cb callback);
 
 #endif				/* __COMM_PKG_MGR_SERVER_H__ */

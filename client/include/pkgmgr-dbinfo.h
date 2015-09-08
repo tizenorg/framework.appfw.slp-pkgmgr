@@ -54,9 +54,9 @@ extern "C" {
 #endif
 
 typedef enum {
-	INSTALL_INTERNAL = 0,
-	INSTALL_EXTERNAL,
-} INSTALL_LOCATION;
+	PM_INSTALL_INTERNAL = 0,
+	PM_INSTALL_EXTERNAL,
+} PM_INSTALL_LOCATION;
 
 typedef void* pkgmgr_pkgdbinfo_h;
 
@@ -65,11 +65,11 @@ typedef void* pkgmgr_pkgdbinfo_h;
  *
  *              This API is for backend installers.\n
  *
- * @param[in]		pkg_name		package name.
+ * @param[in]		pkgid		package id.
  * @param[out]	handle			package info handle.
  * @return		0 if success, error code(<0) if fail\n
 */
-int pkgmgr_create_pkgdbinfo(const char *pkg_name, pkgmgr_pkgdbinfo_h *handle);
+int pkgmgr_create_pkgdbinfo(const char *pkgid, pkgmgr_pkgdbinfo_h *handle);
 
 /**
  * @brief	This API sets the package type in DB.
@@ -102,7 +102,18 @@ int pkgmgr_set_version_to_pkgdbinfo(pkgmgr_pkgdbinfo_h handle, const char *versi
  * @param[in]		location		install location.
  * @return		0 if success, error code(<0) if fail\n
 */
-int pkgmgr_set_install_location_to_pkgdbinfo(pkgmgr_pkgdbinfo_h handle, INSTALL_LOCATION location);
+int pkgmgr_set_install_location_to_pkgdbinfo(pkgmgr_pkgdbinfo_h handle, PM_INSTALL_LOCATION location);
+
+/**
+ * @brief	This API sets package size in DB
+ *
+ *              This API is for backend installers.\n
+ *
+ * @param[in]		handle		package info handle.
+ * @param[in]		size		package size.
+ * @return		0 if success, error code(<0) if fail\n
+*/
+int pkgmgr_set_size_to_pkgdbinfo(pkgmgr_pkgdbinfo_h handle, const char *size);
 
 /**
  * @brief	This API sets label in DB.

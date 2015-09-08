@@ -37,7 +37,7 @@ enum {
 
 typedef struct comm_client comm_client;
 typedef void (*status_cb) (void *cb_data, const char *req_id,
-			   const char *pkg_type, const char *pkg_name,
+			   const char *pkg_type, const char *pkgid,
 			   const char *key, const char *val);
 
 API comm_client *comm_client_new(void);
@@ -45,10 +45,8 @@ API int comm_client_free(comm_client *cc);
 
 API int comm_client_request(comm_client *cc, const char *req_id,
 			    const int req_type, const char *pkg_type,
-			    const char *pkg_name, const char *args,
+			    const char *pkgid, const char *args,
 			    const char *cookie, int is_block);
 
-API int comm_client_set_status_callback(comm_client *cc, status_cb cb,
-					void *cb_data);
-
+API int comm_client_set_status_callback(int comm_status_type, comm_client *cc, status_cb cb, void *cb_data);
 #endif				/* __COMM_CLIENT_H__ */

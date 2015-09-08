@@ -40,11 +40,34 @@ extern "C" {
 
 #include <stdlib.h>
 #include <getopt.h>
+#include <dlog.h>
+
+
 
 /**
  * pkgmgr_installer is an opaque type for an object
  */
 typedef struct pkgmgr_installer pkgmgr_installer;
+typedef void* pkgmgr_instcertinfo_h;
+
+/**
+ * @brief listening event type in pkgmgr.
+ */
+#define PKGMGR_INSTALLER_START_KEY_STR								"start"
+#define PKGMGR_INSTALLER_END_KEY_STR								"end"
+#define PKGMGR_INSTALLER_INSTALL_PERCENT_KEY_STR					"install_percent"
+#define PKGMGR_INSTALLER_GET_SIZE_KEY_STR							"get_size"
+#define PKGMGR_INSTALLER_GET_JUNK_INFO_KEY_STR						"get_junkinfo"
+
+#define PKGMGR_INSTALLER_INSTALL_EVENT_STR							"install"
+#define PKGMGR_INSTALLER_UNINSTALL_EVENT_STR						"uninstall"
+#define PKGMGR_INSTALLER_MOVE_EVENT_STR								"move"
+#define PKGMGR_INSTALLER_UPGRADE_EVENT_STR							"update"
+#define PKGMGR_INSTALLER_OK_EVENT_STR								"ok"
+#define PKGMGR_INSTALLER_FAIL_EVENT_STR								"fail"
+
+
+
 
 /**
  * Request type.
@@ -55,8 +78,34 @@ enum {
 	PKGMGR_REQ_INSTALL = 1,
 	PKGMGR_REQ_UNINSTALL = 2,
 	PKGMGR_REQ_CLEAR = 3,
-	PKGMGR_REQ_RECOVER = 4
+	PKGMGR_REQ_MOVE = 4,
+	PKGMGR_REQ_RECOVER = 5,
+	PKGMGR_REQ_REINSTALL = 6,
+	PKGMGR_REQ_GETSIZE = 7,
+	PKGMGR_REQ_UPGRADE = 8,
+	PKGMGR_REQ_SMACK = 9,
+	PKGMGR_REQ_GETJUNKINFO = 10,
 };
+
+enum {
+	PKGMGR_INSTALLER_EINVAL = -2,		/**< Invalid argument */
+	PKGMGR_INSTALLER_ERROR = -1,		/**< General error */
+	PKGMGR_INSTALLER_EOK = 0			/**< General success */
+};
+
+
+typedef enum {
+	PM_SET_AUTHOR_ROOT_CERT = 0,
+	PM_SET_AUTHOR_INTERMEDIATE_CERT = 1,
+	PM_SET_AUTHOR_SIGNER_CERT = 2,
+	PM_SET_DISTRIBUTOR_ROOT_CERT = 3,
+	PM_SET_DISTRIBUTOR_INTERMEDIATE_CERT = 4,
+	PM_SET_DISTRIBUTOR_SIGNER_CERT = 5,
+	PM_SET_DISTRIBUTOR2_ROOT_CERT = 6,
+	PM_SET_DISTRIBUTOR2_INTERMEDIATE_CERT = 7,
+	PM_SET_DISTRIBUTOR2_SIGNER_CERT = 8,
+}pkgmgr_instcert_type;
+
 
 /**
  * @brief	Create a pkgmgr_installer object.
@@ -159,6 +208,9 @@ int main(int argc, char **argv)
 			break;
 		case PKGMGR_REQ_RECOVER:
 			// Do recovere processing
+			break;
+		case PKGMGR_REQ_REINSTALL:
+			// Do reinstall processing
 			break;
 		default:
 			goto CLEANUP_END;
@@ -275,6 +327,40 @@ int main(int argc, char **argv)
 const char *pkgmgr_installer_get_license_path(pkgmgr_installer *pi);
 
 /**
+	@brief		Get a optional data
+	@pre		pkgmgr_installer_receive_request() must be called.
+	@post		None
+	@see		pkgmgr_installer_receive_request
+	@param[in]	pi	pkgmgr_installer object
+	@return		optional data
+	@retval		NULL	on function failure
+	@remark		Returned string must not be modified.
+	@code
+#include <pkgmgr_installer.h>
+int main(int argc, char **argv)
+{
+	pkgmgr_installer *pi;
+	int r = 0;
+	char *optional_data = NULL;
+
+	pi = pkgmgr_installer_new();
+	if(!pi) return -1;
+	if(pkgmgr_installer_receive_request(pi, argc, argv)) {
+		r = -1;
+		goto CLEANUP_RET;
+	}
+	optional_data = (char *) pkgmgr_installer_get_optional_data(pi);
+
+	// Do something...
+
+	pkgmgr_installer_free(pi);
+	return r;
+}
+@endcode
+ */
+const char *pkgmgr_installer_get_optional_data(pkgmgr_installer *pi);
+
+/**
 	@brief		Get if a request is with quite mode or not
 	@pre		pkgmgr_installer_receive_request() must be called.
 	@post		None
@@ -311,13 +397,80 @@ int main(int argc, char **argv)
 int pkgmgr_installer_is_quiet(pkgmgr_installer *pi);
 
 /**
+	@brief		Get move type
+	@pre		pkgmgr_installer_receive_request() must be called.
+	@post		None
+	@see		pkgmgr_installer_receive_request
+	@param[in]	pi	pkgmgr_installer object
+	@return		Operation result
+	@retval		enum value of move type
+	@remark		None
+	@code
+#include <pkgmgr_installer.h>
+int main(int argc, char **argv)
+{
+	pkgmgr_installer *pi;
+	int r = 0;
+
+	pi = pkgmgr_installer_new();
+	if(!pi) return -1;
+	if(pkgmgr_installer_receive_request(pi, argc, argv)) {
+		r = -1;
+		goto CLEANUP_RET;
+	}
+	move_type = pkgmgr_installer_get_move_type(pi);
+
+	//Do Something
+
+	pkgmgr_installer_free(pi);
+	return r;
+}
+	@endcode
+ */
+int pkgmgr_installer_get_move_type(pkgmgr_installer *pi);
+
+/**
+	@brief		Get caller package id
+	@pre		pkgmgr_installer_receive_request() must be called.
+	@post		None
+	@see		pkgmgr_installer_receive_request
+	@param[in]	pi	pkgmgr_installer object
+	@return		Operation result
+	@retval		enum value of move type
+	@remark		None
+	@code
+#include <pkgmgr_installer.h>
+int main(int argc, char **argv)
+{
+	pkgmgr_installer *pi;
+	int r = 0;
+	char *pkgid = NULL;
+
+	pi = pkgmgr_installer_new();
+	if(!pi) return -1;
+	if(pkgmgr_installer_receive_request(pi, argc, argv)) {
+		r = -1;
+		goto CLEANUP_RET;
+	}
+	pkgid = (char *) pkgmgr_installer_get_caller_pkgid(pi);
+
+	// Do something...
+
+	pkgmgr_installer_free(pi);
+	return r;
+}
+	@endcode
+ */
+const char *pkgmgr_installer_get_caller_pkgid(pkgmgr_installer *pi);
+
+/**
 	@brief		Send a process status signal 
 	@pre		None
 	@post		None
 	@see		None
 	@param[in]	pi	pkgmgr_installer object
 	@param[in]	pkg_type	package type: "deb", "jar", "wgt", ...
-	@param[in]	pkg_name	package name
+	@param[in]	pkgid	package id
 	@param[in]	key			Signal key
 	@param[in]	val			Signal value
 	@return		Operation result
@@ -351,8 +504,61 @@ int main(int argc, char **argv)
  */
 int pkgmgr_installer_send_signal(pkgmgr_installer *pi,
 				 const char *pkg_type,
-				 const char *pkg_name, const char *key,
+				 const char *pkgid, const char *key,
 				 const char *val);
+
+/**
+ * @brief	This API creates the certinfo handle.
+ *
+ *              This API is for package-manager client application.\n
+ *
+ * @param[out]	handle				pointer to cert info handle
+ * @return	0 if success, error code(<0) if fail\n
+*/
+int pkgmgr_installer_create_certinfo_set_handle(pkgmgr_instcertinfo_h *handle);
+
+/**
+ * @brief	This API sets cert value for corresponding cert type.
+ *
+ *              This API is for package-manager client application.\n
+ *
+ * @param[in]	handle				pointer to cert info handle
+ * @param[in]	cert_type			enum value for certificate type
+ * @param[in]	cert_value			certificate value
+ * @return	0 if success, error code(<0) if fail\n
+*/
+int pkgmgr_installer_set_cert_value(pkgmgr_instcertinfo_h handle, pkgmgr_instcert_type cert_type, char *cert_value);
+
+/**
+ * @brief	This API saves cert info in DB.
+ *
+ *              This API is for package-manager client application.\n
+ *
+ * @param[in]	pkgid				package ID
+ * @param[in]	handle				pointer to cert info handle
+ * @return	0 if success, error code(<0) if fail\n
+*/
+int pkgmgr_installer_save_certinfo(const char *pkgid, pkgmgr_instcertinfo_h handle);
+
+/**
+ * @brief	This API destroys cert info handle freeing all resources.
+ *
+ *              This API is for package-manager client application.\n
+ *
+ * @param[in]	handle				pointer to cert info handle
+ * @return	0 if success, error code(<0) if fail\n
+*/
+int pkgmgr_installer_destroy_certinfo_set_handle(pkgmgr_instcertinfo_h handle);
+
+/**
+ * @brief	This API deletes cert info from DB. To be used to cleanup info upon pkg uninstallation
+ *
+ *              This API is for package-manager client application.\n
+ *
+ * @param[in]	pkgid				package ID
+ * @return	0 if success, error code(<0) if fail\n
+*/
+ int pkgmgr_installer_delete_certinfo(const char *pkgid);
 
 #ifdef __cplusplus
 }

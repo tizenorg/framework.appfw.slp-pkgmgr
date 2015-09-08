@@ -20,16 +20,16 @@ SET(INCLUDEDIR "\${prefix}/include")
 set(CMAKE_SKIP_BUILD_RPATH true)
 
 #Verbose
-INCLUDE_DIRECTORIES(${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/comm ${CMAKE_SOURCE_DIR}/parser)
+INCLUDE_DIRECTORIES(${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/comm )
 
 INCLUDE(FindPkgConfig)
-pkg_check_modules(pkgs REQUIRED security-server dlog elementary evas ecore appcore-efl ecore-x ail ecore-file libxml-2.0)
+pkg_check_modules(pkgs REQUIRED security-server dlog elementary evas ecore appcore-efl ecore-x ecore-file pkgmgr-info pkgmgr-parser iniparser vconf minizip xdgmime)
 
 FOREACH(flag ${pkgs_CFLAGS})
 	SET(EXTRA_CFLAGS "${EXTRA_CFLAGS} ${flag}")
 ENDFOREACH(flag)
 
-pkg_check_modules(libpkgs REQUIRED dbus-glib-1 dlog aul ail)
+pkg_check_modules(libpkgs REQUIRED dbus-glib-1 dlog pkgmgr-info pkgmgr-parser iniparser security-server vconf minizip xdgmime)
 
 FOREACH(flag ${libpkgs_CFLAGS})
 	SET(EXTRA_CFLAGS "${EXTRA_CFLAGS} ${flag}")
@@ -54,14 +54,13 @@ SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${EXTRA_CFLAGS}")
 ##################
 ## build comm libraries
 add_subdirectory(comm)
-add_subdirectory(parser)
 add_subdirectory(tool)
 add_subdirectory(types)
 
 ###################################################################################################
 ## for libpkgmgr-client.so (library)
 SET(PKGMGR_CLIENT "pkgmgr-client")
-SET(libpkgmgr-client_SOURCES ${pm_c_src_dir}/pkgmgr-info.c ${pm_c_src_dir}/pkgmgr-dbinfo.c ${pm_c_src_dir}/pkgmgr-internal.c ${pm_c_src_dir}/pkgmgr.c)
+SET(libpkgmgr-client_SOURCES ${pm_c_src_dir}/pkgmgr-internal.c ${pm_c_src_dir}/pkgmgr.c)
 SET(libpkgmgr-client_LDFLAGS " -module -avoid-version ")
 SET(libpkgmgr-client_CFLAGS  " ${CFLAGS} -fPIC -I${pm_c_inc_dir} -I${pm_inc_dir} -I${pm_t_inc_dir} ${debug_type}")
 
@@ -69,33 +68,42 @@ ADD_LIBRARY(${PKGMGR_CLIENT} SHARED ${libpkgmgr-client_SOURCES})
 SET_TARGET_PROPERTIES(${PKGMGR_CLIENT} PROPERTIES SOVERSION ${VERSION_MAJOR})
 SET_TARGET_PROPERTIES(${PKGMGR_CLIENT} PROPERTIES VERSION ${VERSION})
 SET_TARGET_PROPERTIES(${PKGMGR_CLIENT} PROPERTIES COMPILE_FLAGS "${libpkgmgr-client_CFLAGS}")
-TARGET_LINK_LIBRARIES(${PKGMGR_CLIENT} pkgmgr_installer_client pkgmgr_installer_status_broadcast_server pkgmgr_parser ${libpkgs_LDFLAGS})
+TARGET_LINK_LIBRARIES(${PKGMGR_CLIENT} pkgmgr_installer_client pkgmgr_installer_status_broadcast_server pkgmgr-info ${libpkgs_LDFLAGS})
 ###################################################################################################
 
 ###################################################################################################
 ## for pkgmgr-server (binary)
 SET(pkgmgr-server_SOURCES ${pm_s_src_dir}/pkgmgr-server.c ${pm_s_src_dir}/pm-queue.c)
-SET(pkgmgr-server_CFLAGS " -I. -I${pm_inc_dir} -I${pm_s_inc_dir} -I${pm_dir}/comm ${debug_type} -D_GNU_SOURCE ")
+SET(pkgmgr-server_CFLAGS " -I. -I${pm_inc_dir} -I${pm_s_inc_dir} -I${pm_dir}/comm ${debug_type} -D_GNU_SOURCE -fPIE")
 SET(pkgmgr-server_LDFLAGS ${pkgs_LDFLAGS})
 
 ADD_EXECUTABLE(pkgmgr-server ${pkgmgr-server_SOURCES})
 TARGET_LINK_LIBRARIES(pkgmgr-server pkgmgr_installer pkgmgr_installer_pkg_mgr_server)
-TARGET_LINK_LIBRARIES(pkgmgr-server ${pkgs_LDFLAGS})
+TARGET_LINK_LIBRARIES(pkgmgr-server ${PKGMGR_CLIENT} ${pkgs_LDFLAGS})
 SET_TARGET_PROPERTIES(pkgmgr-server PROPERTIES COMPILE_FLAGS "${pkgmgr-server_CFLAGS}")
+SET_TARGET_PROPERTIES(pkgmgr-server PROPERTIES LINK_FLAGS "-pie")
 ####################################################################################################
 
 CONFIGURE_FILE(pkgmgr.pc.in pkgmgr.pc @ONLY)
-configure_file(org.tizen.slp.pkgmgr.service.in org.tizen.slp.pkgmgr.service @ONLY)
+CONFIGURE_FILE(junkmgr.pc.in junkmgr.pc @ONLY)
+configure_file(org.tizen.pkgmgr.service.in org.tizen.pkgmgr.service @ONLY)
 configure_file(pkg_path.conf.in pkg_path.conf @ONLY)
+configure_file(710.pkgmgr.patch.sh.in 710.pkgmgr.patch.sh @ONLY)
+configure_file(pkgmgr-soft-reset-ui.sh.in pkgmgr-soft-reset-ui.sh @ONLY)
 
 #INSTALL(FILES ${CMAKE_BINARY_DIR}/libpkgmgr-client.so DESTINATION lib)
 INSTALL(TARGETS ${PKGMGR_CLIENT} DESTINATION lib COMPONENT RuntimeLibraries)
 INSTALL(FILES ${CMAKE_BINARY_DIR}/pkgmgr-server DESTINATION bin PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_WRITE)
 INSTALL(FILES ${CMAKE_CURRENT_BINARY_DIR}/pkgmgr.pc DESTINATION lib/pkgconfig)
+INSTALL(FILES ${CMAKE_CURRENT_BINARY_DIR}/junkmgr.pc DESTINATION lib/pkgconfig)
 INSTALL(FILES ${CMAKE_CURRENT_SOURCE_DIR}/client/include/package-manager.h DESTINATION include)
-INSTALL(FILES ${CMAKE_CURRENT_BINARY_DIR}/org.tizen.slp.pkgmgr.service DESTINATION ${PREFIX}/share/dbus-1/services/)
+INSTALL(FILES ${CMAKE_CURRENT_SOURCE_DIR}/include/junk-manager.h DESTINATION include)
+INSTALL(FILES ${CMAKE_CURRENT_BINARY_DIR}/org.tizen.pkgmgr.service DESTINATION ${PREFIX}/share/dbus-1/services/)
+INSTALL(FILES ${CMAKE_CURRENT_BINARY_DIR}/slp-pkgmgr.service DESTINATION ${PREFIX}/lib/systemd/system/)
 INSTALL(FILES ${CMAKE_CURRENT_BINARY_DIR}/pkg_path.conf DESTINATION ${PREFIX}/etc/package-manager/)
 install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/queue_status DESTINATION etc/package-manager/server/)
+install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/710.pkgmgr.patch.sh DESTINATION /etc/opt/upgrade/)
+install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/pkgmgr-soft-reset-ui.sh DESTINATION ${PREFIX}/etc/package-manager/)
 
 ####################################################################################################
 add_subdirectory(installers)

@@ -44,7 +44,7 @@ typedef struct {
 	char req_id[MAX_REQ_ID_LEN];
 	int req_type;
 	char pkg_type[MAX_PKG_TYPE_LEN];
-	char pkg_name[MAX_PKG_NAME_LEN];
+	char pkgid[MAX_PKG_NAME_LEN];
 	char args[MAX_PKG_ARGS_LEN];
 	char cookie[MAX_COOKIE_LEN];
 } pm_dbus_msg;
@@ -52,7 +52,7 @@ typedef struct {
 typedef struct backend_info_t {
 	int pid;
 	char pkgtype[MAX_PKG_TYPE_LEN];
-	char pkgname[MAX_PKG_NAME_LEN];
+	char pkgid[MAX_PKG_NAME_LEN];
 	char args[MAX_PKG_ARGS_LEN];
 }backend_info;
 

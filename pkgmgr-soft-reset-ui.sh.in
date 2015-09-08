@@ -1,0 +1,40 @@
+echo "--------------------------------------"
+echo "Soft Reset       ..............."
+echo "--------------------------------------"
+
+# avoid crash popup
+	/usr/bin/killall -STOP deviced
+
+
+disable_keys() {
+	key_dir=`/bin/ls -1d /sys/devices/gpio_keys*`
+	if [ "z$key_dir" != "z" ]; then
+		key_code=`/bin/cat $key_dir/keys`
+		echo $key_code > $key_dir/disabled_keys
+	fi
+	# If cannot disabled keys by sysfs, kill apps about key operations
+	# systemctl stop starter
+	# /usr/bin/killall volume
+	# /usr/bin/killall cluster-home
+}
+
+
+## display ui
+HOME=/home/app /usr/bin/factory-reset-util --displayui &
+
+
+## stop lcd on-off and turn lcd on
+ss_ready=`/bin/ps -ef | /bin/grep -e "deviced\|system_server" | /bin/grep -v grep`
+if [ "z$ss_ready" != "z" ]; then
+	/usr/bin/dbus-send --system --type=method_call --print-reply --reply-timeout=10000 \
+		--dest=org.tizen.system.deviced	/Org/Tizen/System/DeviceD/Display \
+		org.tizen.system.deviced.display.stop
+fi
+
+# reset audio - If not, some targets make noise when rebooting.
+/usr/bin/sound_server --soundreset
+
+
+echo "--------------------------------------"
+echo "Soft Reset       ..............."
+echo "--------------------------------------"

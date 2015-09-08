@@ -43,7 +43,7 @@
 
 static int __confirm_ui(void *data, char *msg);
 static int __install_package(const char *pkg_file_path);
-static int __uninstall_package(const char *pkg_name);
+static int __uninstall_package(const char *pkgid);
 static int __recover_package_system(void);
 
 static pkgmgr_installer *_pi;
@@ -64,19 +64,16 @@ static int __install_package(const char *pkg_file_path)
 
 	int ret = 0;
 	ret = pkgmgr_installer_send_signal(_pi, "sample", "abc", "end", "ok");
-	if (ret == 0) {
-		system("touch /opt/etc/install_complete");
-	}
 
-	return 0;
+	return ret;
 }
 
-static int __uninstall_package(const char *pkg_name)
+static int __uninstall_package(const char *pkgid)
 {
 	return 0;
 }
 
-static int __clear_package(const char *pkg_name)
+static int __clear_package(const char *pkgid)
 {
 	return 0;
 }

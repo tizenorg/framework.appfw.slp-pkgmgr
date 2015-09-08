@@ -53,6 +53,7 @@
 #include <errno.h>
 #include <stdbool.h>
 #include <time.h>
+#include <glib.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -81,6 +82,7 @@ extern "C" {
 #define PKG_VERSION_STRING_LEN_MAX	128
 #define PKG_VALUE_STRING_LEN_MAX 512
 #define PKG_URL_STRING_LEN_MAX 1024
+#define PKG_LABEL_STRING_LEN_MAX 128
 
 /** 
  *@brief application's structure retrieved by package-manager
@@ -88,6 +90,7 @@ extern "C" {
 typedef struct _package_manager_pkg_info_t {
 	char pkg_type[PKG_TYPE_STRING_LEN_MAX];
 	char pkg_name[PKG_NAME_STRING_LEN_MAX];
+	char pkgid[PKG_NAME_STRING_LEN_MAX];
 	char version[PKG_VERSION_STRING_LEN_MAX];
 	struct _package_manager_pkg_info_t *next;
 } package_manager_pkg_info_t;
@@ -95,7 +98,9 @@ typedef struct _package_manager_pkg_info_t {
 typedef struct _package_manager_pkg_detail_info_t {
 	char pkg_type[PKG_TYPE_STRING_LEN_MAX];
 	char pkg_name[PKG_NAME_STRING_LEN_MAX];
+	char pkgid[PKG_NAME_STRING_LEN_MAX];
 	char version[PKG_VERSION_STRING_LEN_MAX];
+	char api_version[PKG_VERSION_STRING_LEN_MAX];
 	char pkg_description[PKG_VALUE_STRING_LEN_MAX];
 	char min_platform_version[PKG_VERSION_STRING_LEN_MAX];
 	time_t installed_time;	/* installed time it must be GMT+0 time */
@@ -104,6 +109,11 @@ typedef struct _package_manager_pkg_detail_info_t {
 	int data_size;			/* data size which is made on run time */
 	char optional_id[PKG_NAME_STRING_LEN_MAX]; /*package ID if exists */
 	void *pkg_optional_info;
+	char label[PKG_LABEL_STRING_LEN_MAX];
+	char author[PKG_VALUE_STRING_LEN_MAX];
+	char *icon_buf;
+	int icon_size;
+	GList *privilege_list;
 } package_manager_pkg_detail_info_t;
 
 /** @} */

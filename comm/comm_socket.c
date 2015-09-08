@@ -94,6 +94,7 @@ comm_socket *_comm_socket_new(void)
 int _comm_socket_free(comm_socket *cs)
 {
 	CHK_CS_RET(-EINVAL);
+	close(cs->sockfd);
 	free(cs);
 	return 0;
 }
@@ -115,16 +116,19 @@ int _comm_socket_create_server(comm_socket *cs, const char *sock_path)
 
 	/* bind */
 	if (bind(fd, (struct sockaddr *)&saddr, sizeof(saddr))) {
+		close(fd);
 		return -errno;
 	}
 
 	/* chmod */
 	if (chmod(saddr.sun_path, (S_IRWXU | S_IRWXG | S_IRWXO)) < 0) {
+		close(fd);
 		return -errno;
 	}
 
 	/* listen */
 	if (-1 == listen(fd, 10)) {
+		close(fd);
 		return -errno;
 	}
 

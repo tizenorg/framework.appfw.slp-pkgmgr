@@ -36,6 +36,8 @@
 #include <dbus/dbus-glib-lowlevel.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <dirent.h>
+#include <fcntl.h>
 
 /*******************
  * ADT description
@@ -57,6 +59,128 @@ struct comm_client {
  * Internal function description
  */
 
+static inline int __comm_read_proc(const char *path, char *buf, int size)
+{
+	int fd;
+	int ret;
+
+	if (buf == NULL || path == NULL)
+		return -1;
+
+	fd = open(path, O_RDONLY);
+	if (fd < 0)
+		return -1;
+
+	ret = read(fd, buf, size - 1);
+	if (ret <= 0) {
+		close(fd);
+		return -1;
+	} else
+		buf[ret] = 0;
+
+	close(fd);
+
+	return ret;
+}
+static inline int __comm_find_pid_by_cmdline(const char *dname,
+				      const char *cmdline, const char *apppath)
+{
+	int pid = 0;
+
+	if (strncmp(cmdline, apppath, 1024-1) == 0) {
+		pid = atoi(dname);
+		if (pid != getpgid(pid))
+			pid = 0;
+	}
+
+	return pid;
+}
+
+static int __comm_proc_iter_kill_cmdline(const char *apppath)
+{
+	DIR *dp;
+	struct dirent *dentry;
+	int pid;
+	int ret;
+	char buf[1024];
+
+	dp = opendir("/proc");
+	if (dp == NULL) {
+		return -1;
+	}
+
+	while ((dentry = readdir(dp)) != NULL) {
+		if (!isdigit(dentry->d_name[0]))
+			continue;
+
+		snprintf(buf, sizeof(buf), "/proc/%s/cmdline", dentry->d_name);
+		ret = __comm_read_proc(buf, buf, sizeof(buf));
+		if (ret <= 0)
+			continue;
+
+		pid = __comm_find_pid_by_cmdline(dentry->d_name, buf, apppath);
+		if (pid > 0) {
+			int pgid;
+
+			pgid = getpgid(pid);
+			if (pgid <= 1) {
+				closedir(dp);
+				return -1;
+			}
+
+			if (killpg(pgid, SIGKILL) < 0) {
+				closedir(dp);
+				return -1;
+			}
+		}
+	}
+
+	closedir(dp);
+	return 0;
+}
+static char *__get_interface(int status_type)
+{
+	char *interface = NULL;
+
+	switch (status_type) {
+		case COMM_STATUS_BROADCAST_ALL:
+			interface = COMM_STATUS_BROADCAST_DBUS_INTERFACE;
+			break;
+
+		case COMM_STATUS_BROADCAST_INSTALL:
+			interface = COMM_STATUS_BROADCAST_DBUS_INSTALL_INTERFACE;
+			break;
+
+		case COMM_STATUS_BROADCAST_UNINSTALL:
+			interface = COMM_STATUS_BROADCAST_DBUS_UNINSTALL_INTERFACE;
+			break;
+
+		case COMM_STATUS_BROADCAST_MOVE:
+			interface = COMM_STATUS_BROADCAST_DBUS_MOVE_INTERFACE;
+			break;
+
+		case COMM_STATUS_BROADCAST_INSTALL_PROGRESS:
+			interface = COMM_STATUS_BROADCAST_DBUS_INSTALL_PROGRESS_INTERFACE;
+			break;
+
+		case COMM_STATUS_BROADCAST_UPGRADE:
+			interface = COMM_STATUS_BROADCAST_DBUS_UPGRADE_INTERFACE;
+			break;
+
+		case COMM_STATUS_BROADCAST_GET_SIZE:
+			interface = COMM_STATUS_BROADCAST_DBUS_GET_SIZE_INTERFACE;
+			break;
+
+		case COMM_STATUS_BROADCAST_GET_JUNK_INFO:
+			interface = COMM_STATUS_BROADCAST_DBUS_GET_JUNK_INFO_INTERFACE;
+			break;
+
+		default:
+			interface = NULL;
+	}
+	return interface;
+}
+
 /**
  * signal handler filter
  * Filter signal, and run user callback
@@ -74,7 +198,7 @@ _on_signal_handle_filter(DBusConnection *conn,
 	/* Values to be received by signal */
 	char *req_id = NULL;
 	char *pkg_type = NULL;
-	char *pkg_name = NULL;
+	char *pkgid = NULL;
 	char *key = NULL;
 	char *val = NULL;
 
@@ -83,26 +207,31 @@ _on_signal_handle_filter(DBusConnection *conn,
 	sig_cb_data = (struct signal_callback_data *)user_data;
 
 	/* Signal check */
-	if (dbus_message_is_signal(msg,
-				   COMM_STATUS_BROADCAST_DBUS_INTERFACE,
-				   COMM_STATUS_BROADCAST_SIGNAL_STATUS)) {
+	if ((dbus_message_is_signal(msg, COMM_STATUS_BROADCAST_DBUS_INTERFACE, COMM_STATUS_BROADCAST_SIGNAL_STATUS)) ||
+		(dbus_message_is_signal(msg, COMM_STATUS_BROADCAST_DBUS_INSTALL_INTERFACE, COMM_STATUS_BROADCAST_EVENT_INSTALL)) ||
+		(dbus_message_is_signal(msg, COMM_STATUS_BROADCAST_DBUS_UNINSTALL_INTERFACE, COMM_STATUS_BROADCAST_EVENT_UNINSTALL)) ||
+		(dbus_message_is_signal(msg, COMM_STATUS_BROADCAST_DBUS_MOVE_INTERFACE, COMM_STATUS_BROADCAST_EVENT_MOVE)) ||
+		(dbus_message_is_signal(msg, COMM_STATUS_BROADCAST_DBUS_UPGRADE_INTERFACE, COMM_STATUS_BROADCAST_EVENT_UPGRADE)) ||
+		(dbus_message_is_signal(msg, COMM_STATUS_BROADCAST_DBUS_GET_SIZE_INTERFACE, COMM_STATUS_BROADCAST_EVENT_GET_SIZE)) ||
+		(dbus_message_is_signal(msg, COMM_STATUS_BROADCAST_DBUS_GET_JUNK_INFO_INTERFACE, COMM_STATUS_BROADCAST_EVENT_GET_JUNK_INFO)) ||
+		(dbus_message_is_signal(msg, COMM_STATUS_BROADCAST_DBUS_INSTALL_PROGRESS_INTERFACE, COMM_STATUS_BROADCAST_EVENT_INSTALL_PROGRESS))) {
 
 		/* Signal type check */
 		if (dbus_message_get_args(msg, &err,
 					  DBUS_TYPE_STRING, &req_id,
 					  DBUS_TYPE_STRING, &pkg_type,
-					  DBUS_TYPE_STRING, &pkg_name,
+					  DBUS_TYPE_STRING, &pkgid,
 					  DBUS_TYPE_STRING, &key,
 					  DBUS_TYPE_STRING, &val,
 					  DBUS_TYPE_INVALID)) {
 			/* Got signal! */
-			dbg("Got signal: %s / %s / %s / %s / %s", req_id,
-			    pkg_type, pkg_name, key, val);
+			SECURE_LOGD("Got signal: %s / %s / %s / %s / %s", req_id,
+			    pkg_type, pkgid, key, val);
 
 			/* Run signal callback if exist */
 			if (sig_cb_data && sig_cb_data->cb) {
 				sig_cb_data->cb(sig_cb_data->cb_data, req_id,
-						pkg_type, pkg_name, key, val);
+						pkg_type, pkgid, key, val);
 
 				dbg("callback function is end");
 			}
@@ -185,10 +314,6 @@ int comm_client_free(comm_client *cc)
 		return -2;
 	}
 
-	/* Cleanup ADT */
-	/* flush remaining buffer: blocking mode */
-	dbus_connection_flush(cc->conn);	
-
 	/* Free signal filter if signal callback is exist */
 	if (cc->sig_cb_data) {
 		dbus_connection_remove_filter(cc->conn,
@@ -215,16 +340,19 @@ comm_client_request(
 		const char *req_id,
 		const int req_type,
 		const char *pkg_type,
-		const char *pkg_name,
+		const char *pkgid,
 		const char *args,
 		const char *cookie,
 		int is_block)
 {
+	DBusError err;
 	DBusMessage *msg = NULL;
 	int r = COMM_RET_ERROR;	/* Default return */
 
-	if (!cc)
+	if (!cc){
+		ERR("Invalid dbus input");
 		return COMM_RET_ERROR;
+	}
 
 	/* Create a dbus message */
 	msg = dbus_message_new_method_call(COMM_PKG_MGR_DBUS_SERVICE,
@@ -233,6 +361,7 @@ comm_client_request(
 					   COMM_PKG_MGR_METHOD_REQUEST);
 	if (NULL == msg) {
 		r = COMM_RET_NOMEM;
+		ERR("dbus_message_new_method_call fail : msg is NULL");
 		goto ERROR_CLEANUP;
 	}
 
@@ -241,36 +370,51 @@ comm_client_request(
 		req_id = "tmp_reqid";
 	if (NULL == pkg_type)
 		pkg_type = "none";
-	if (NULL == pkg_name)
-		pkg_name = "";
+	if (NULL == pkgid)
+		pkgid = "";
 	if (NULL == args)
 		args = "";
 	if (NULL == cookie)
 		cookie = "";
+
+	dbus_error_init(&err);
 
 	/* Append arguments */
 	if (!dbus_message_append_args(msg,
 				      DBUS_TYPE_STRING, &req_id,
 				      DBUS_TYPE_INT32, &req_type,
 				      DBUS_TYPE_STRING, &pkg_type,
-				      DBUS_TYPE_STRING, &pkg_name,
+				      DBUS_TYPE_STRING, &pkgid,
 				      DBUS_TYPE_STRING, &args,
 				      DBUS_TYPE_STRING, &cookie,
 				      DBUS_TYPE_INVALID)) {
-		r = COMM_RET_NOMEM;
+		r = -3;
+		ERR("dbus_message_append_args fail");
 		goto ERROR_CLEANUP;
 	}
 
-	/* Send message */
+	/* Send message , timeout -1 = _DBUS_DEFAULT_TIMEOUT_VALUE (25 * 1000) 25 seconds*/
 	if (is_block == 1){
 		if(!dbus_connection_send_with_reply_and_block(cc->conn, msg,
-							      5000, NULL)) {
-			r = COMM_RET_NOMEM; 
-			goto ERROR_CLEANUP;
+							      -1, NULL)) {
+			ERR("try send msg to dbus by timeout");
+			sleep(1);
+			if(!dbus_connection_send_with_reply_and_block(cc->conn, msg,
+									  -1, &err)) {
+				r = -4;
+				ERR("dbus_connection_send_with_reply_and_block fail");
+
+				__comm_proc_iter_kill_cmdline("pkgmgr-server");
+
+				if (dbus_error_is_set(&err))
+					ERR("dbus error:%s", err.message);
+				goto ERROR_CLEANUP;
+			}
 		}
 	} else {
 		if (!dbus_connection_send(cc->conn, msg, NULL)) {
-			r = COMM_RET_NOMEM;
+			r = -5;
+			ERR("dbus_connection_send fail");
 			goto ERROR_CLEANUP;
 		}
 	}
@@ -291,6 +435,8 @@ comm_client_request(
 	if (msg)
 		dbus_message_unref(msg);
 
+	dbus_error_free(&err);
+
 	return r;
 }
 
@@ -298,7 +444,7 @@ comm_client_request(
  * Set a callback for status signal
  */
 int
-comm_client_set_status_callback(comm_client *cc, status_cb cb, void *cb_data)
+comm_client_set_status_callback(int comm_status_type, comm_client *cc, status_cb cb, void *cb_data)
 {
 	DBusError err;
 	char buf[256] = { 0, };
@@ -310,8 +456,7 @@ comm_client_set_status_callback(comm_client *cc, status_cb cb, void *cb_data)
 		goto ERROR_CLEANUP;
 
 	/* Add a rule for signal */
-	snprintf(buf, 255, "type='signal',interface='%s'",
-		 COMM_STATUS_BROADCAST_DBUS_INTERFACE);
+	snprintf(buf, 255, "type='signal',interface='%s'",	__get_interface(comm_status_type));
 	dbus_bus_add_match(cc->conn, buf, &err);
 	if (dbus_error_is_set(&err)) {
 		ERR("dbus error:%s", err.message);

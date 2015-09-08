@@ -1,0 +1,14 @@
+build_log
+*.log
+*.pyc
+usr
+opt
+*.o
+*.os
+*.exe
+binaries
+*.ipk
+*~
+cmake_tmp
+*-stamp
+doxygen_output

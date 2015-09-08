@@ -44,6 +44,7 @@ struct PkgMgrObject {
 	DBusGConnection *bus;
 
 	request_callback req_cb;
+	create_directory_cb create_dir_cb;
 	void *req_cb_data;
 };
 
@@ -74,8 +75,12 @@ G_DEFINE_TYPE(PkgMgrObject, pkg_mgr_object, G_TYPE_OBJECT);
  */
 GCallback pkgmgr_request(PkgMgrObject *obj, const gchar *req_id,
 			 const gint req_type, const gchar *pkg_type,
-			 const gchar *pkg_name, const gchar *args,
-			 const gchar *cookie, gint *ret, GError *err);
+			 const gchar *pkgid, const gchar *args,
+			 const gchar *cookie, gint *ret, GError **err);
+
+GCallback pkgmgr_create_external_directory(PkgMgrObject *obj,
+					   gint *ret,
+					   GError **err);
 
 /* Include stub header */
 #include "comm_pkg_mgr_server_dbus_bindings.h"
@@ -107,8 +112,8 @@ static void pkg_mgr_object_init(PkgMgrObject *obj)
 		return;
 	}
 	/* Register service name
-	 * NOTE: refer to 
-	http://dbus.freedesktop.org/doc/dbus-specification.html 
+	 * NOTE: refer to
+	http://dbus.freedesktop.org/doc/dbus-specification.html
 	 */
 	guint result;
 	if (!dbus_g_proxy_call(proxy, "RequestName", &err,
@@ -137,8 +142,12 @@ static void pkg_mgr_object_init(PkgMgrObject *obj)
 static void pkg_mgr_object_class_init(PkgMgrObjectClass *klass)
 {
 	dbg("called");
+	GObjectClass *gobject_class;
 
 	g_assert(NULL != klass);
+
+	gobject_class = (GObjectClass *)klass;
+	gobject_class->finalize = pkg_mgr_object_finalize;
 
 	dbus_g_object_type_install_info(PKG_MGR_TYPE_OBJECT,
 					&dbus_glib_pkgmgr_object_info);
@@ -151,34 +160,49 @@ static void pkg_mgr_object_finalize(GObject *self)
 	/* PkgMgrObjectClass *klass = (PkgMgrObjectClass *) G_OBJECT_CLASS(self); */
 
 	/* Call parent's finalize function
-	 * 'server_object_parent_class' comes from G_DEFINE_TYPE() macro. 
+	 * 'server_object_parent_class' comes from G_DEFINE_TYPE() macro.
 	 */
 	G_OBJECT_CLASS(pkg_mgr_object_parent_class)->finalize(self);
 }
 
+/**
+ * Set request callback function
+ */
+void pkg_mgr_set_request_callback(PkgMgrObject *obj, request_callback req_cb,
+		void *cb_data)
+{
+	obj->req_cb = req_cb;
+	obj->req_cb_data = cb_data;
+}
+
+void pkg_mgr_set_callback_to_create_directory(PkgMgrObject *obj, create_directory_cb callback)
+{
+	obj->create_dir_cb = callback;
+	obj->req_cb_data = NULL;
+}
+
 /* dbus-glib methods */
 
-GCallback
-pkgmgr_request(PkgMgrObject *obj,
+GCallback pkgmgr_request(PkgMgrObject *obj,
 	       const gchar *req_id,
 	       const gint req_type,
 	       const gchar *pkg_type,
-	       const gchar *pkg_name,
+	       const gchar *pkgid,
 	       const gchar *args,
-	       const gchar *cookie, gint *ret, GError *err)
+	       const gchar *cookie, gint *ret, GError **err)
 {
 	dbg("Called");
 	*ret = COMM_RET_OK;	/* TODO: fix this! */
 
-	/* TODO: Add business logic 
+	/* TODO: Add business logic
 	 * - add to queue, or remove from queue
 	 * */
 
 	if (obj->req_cb) {
-		dbg("Call request callback(obj, %s, %d, %s, %s, %s, *ret)",
-		    req_id, req_type, pkg_type, pkg_name, args);
+		SECURE_LOGD("Call request callback(obj, %s, %d, %s, %s, %s, *ret)",
+		    req_id, req_type, pkg_type, pkgid, args);
 		obj->req_cb(obj->req_cb_data, req_id, req_type, pkg_type,
-			    pkg_name, args, cookie, ret);
+			    pkgid, args, cookie, ret);
 	} else {
 		dbg("Attempt to call request callback,"
 		" but request callback is not set. Do nothing.\n"
@@ -189,15 +213,23 @@ pkgmgr_request(PkgMgrObject *obj,
 	return (GCallback) TRUE;
 }
 
-/* Other APIs
- */
-
-/**
- * Set request callback function
- */
-void pkg_mgr_set_request_callback(PkgMgrObject *obj, request_callback req_cb,
-			     void *cb_data)
+GCallback pkgmgr_create_external_directory(PkgMgrObject *obj, gint *ret, GError **err)
 {
-	obj->req_cb = req_cb;
-	obj->req_cb_data = cb_data;
+	int res;
+
+	dbg("Try to create external directories.");
+	if (obj->create_dir_cb)
+	{
+		res = obj->create_dir_cb();
+		if (res < 0)
+		{
+			ERR("_create_external_directory() is failed. error = [%d]", res);
+		}
+	} else {
+		res = -1;
+	}
+
+	*ret = res;
+
+	return (GCallback) TRUE;
 }

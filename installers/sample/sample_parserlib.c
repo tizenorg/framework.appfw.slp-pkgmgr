@@ -65,9 +65,6 @@ int PKGMGR_PARSER_PLUGIN_INSTALL(xmlDocPtr docPtr)
 	if(reader != NULL) {
 		int ret = xmlTextReaderRead(reader);
 		while(ret == 1) {
-			const xmlChar   *name;
-			name = xmlTextReaderConstName(reader);
-			DBGI("name %s", name?name:"NULL");
 			ret = xmlTextReaderRead(reader);
 		}
 		xmlFreeTextReader(reader);

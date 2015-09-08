@@ -31,11 +31,11 @@
 #include <dbus/dbus.h>
 
 /* pure dbus api */
-API DBusConnection *comm_status_broadcast_server_connect(void);
-API void comm_status_broadcast_server_send_signal(DBusConnection *conn,
+API DBusConnection *comm_status_broadcast_server_connect(int comm_status_type);
+API void comm_status_broadcast_server_send_signal(int comm_status_type, DBusConnection *conn,
 						  const char *req_id,
 						  const char *pkg_type,
-						  const char *pkg_name,
+						  const char *pkgid,
 						  const char *key,
 						  const char *val);
 API void comm_status_broadcast_server_disconnect(DBusConnection *conn);

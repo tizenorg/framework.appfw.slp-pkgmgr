@@ -1,0 +1,10 @@
+[Unit]
+Description=pkgmgr recovery
+Before=launchpad-preload.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/etc/package-manager/pkg_recovery.sh
+
+[Install]
+WantedBy=multi-user.target

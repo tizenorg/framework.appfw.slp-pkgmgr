@@ -40,16 +40,15 @@
 
 #ifndef NDEBUG
 #ifdef USE_DLOG
+#undef LOG_TAG
+#ifndef LOG_TAG
 #define LOG_TAG "PKGMGR"
+#endif				/* LOG_TAG */
 #include <dlog.h>
-#define dbg(fmtstr, args...) \
-	do { SLOGI("[comm]%s:%d:%s(): " \
-	fmtstr "\n", basename(__FILE__), __LINE__, __func__, ##args); } \
-	while (0)
-#define ERR(fmtstr, args...) \
-	do { SLOGE("[comm]%s:%d:%s(): " \
-	fmtstr "\n", basename(__FILE__), __LINE__, __func__, ##args); } \
-	while (0)
+
+#define dbg(fmt, arg...) LOGD(fmt, ##arg)
+#define ERR(fmt, arg...) LOGE(fmt, ##arg)
+
 #else
 #include <stdio.h>
 #include <sys/types.h>
@@ -74,21 +73,57 @@
 
 /* from comm_pkg_mgr.xml
  */
-#define COMM_PKG_MGR_DBUS_SERVICE "org.tizen.slp.pkgmgr"
-#define COMM_PKG_MGR_DBUS_PATH "/org/tizen/slp/pkgmgr"
-#define COMM_PKG_MGR_DBUS_INTERFACE "org.tizen.slp.pkgmgr"
+#define COMM_PKG_MGR_DBUS_SERVICE "org.tizen.pkgmgr"
+#define COMM_PKG_MGR_DBUS_PATH "/org/tizen/pkgmgr"
+#define COMM_PKG_MGR_DBUS_INTERFACE "org.tizen.pkgmgr"
 #define COMM_PKG_MGR_METHOD_REQUEST "Request"
 #define COMM_PKG_MGR_METHOD_ECHO_STRING "EchoString"
+#define COMM_PKG_MGR_METHOD_CREATE_EXTERNAL_DIRECTORY "CreateExternalDirectory"
 
 /* from comm_status_broadcast
  */
 #define COMM_STATUS_BROADCAST_DBUS_SERVICE_PREFIX \
-	"org.tizen.slp.pkgmgr_status"
+	"org.tizen.pkgmgr_status"
 #define COMM_STATUS_BROADCAST_DBUS_PATH \
-	"/org/tizen/slp/pkgmgr_status"
+	"/org/tizen/pkgmgr_status"
 #define COMM_STATUS_BROADCAST_DBUS_INTERFACE \
-	"org.tizen.slp.pkgmgr_status"
+	"org.tizen.pkgmgr_status"
 #define COMM_STATUS_BROADCAST_SIGNAL_STATUS "status"
+
+#define COMM_STATUS_BROADCAST_DBUS_INSTALL_SERVICE_PREFIX "org.tizen.pkgmgr.install"
+#define COMM_STATUS_BROADCAST_DBUS_INSTALL_PATH	"/org/tizen/pkgmgr/install"
+#define COMM_STATUS_BROADCAST_DBUS_INSTALL_INTERFACE "org.tizen.pkgmgr.install"
+#define COMM_STATUS_BROADCAST_EVENT_INSTALL "install"
+
+#define COMM_STATUS_BROADCAST_DBUS_UNINSTALL_SERVICE_PREFIX "org.tizen.pkgmgr.uninstall"
+#define COMM_STATUS_BROADCAST_DBUS_UNINSTALL_PATH	"/org/tizen/pkgmgr/uninstall"
+#define COMM_STATUS_BROADCAST_DBUS_UNINSTALL_INTERFACE "org.tizen.pkgmgr.uninstall"
+#define COMM_STATUS_BROADCAST_EVENT_UNINSTALL "uninstall"
+
+#define COMM_STATUS_BROADCAST_DBUS_MOVE_SERVICE_PREFIX "org.tizen.pkgmgr.move"
+#define COMM_STATUS_BROADCAST_DBUS_MOVE_PATH	"/org/tizen/pkgmgr/move"
+#define COMM_STATUS_BROADCAST_DBUS_MOVE_INTERFACE "org.tizen.pkgmgr.move"
+#define COMM_STATUS_BROADCAST_EVENT_MOVE "move"
+
+#define COMM_STATUS_BROADCAST_DBUS_INSTALL_PROGRESS_SERVICE_PREFIX "org.tizen.pkgmgr.install.progress"
+#define COMM_STATUS_BROADCAST_DBUS_INSTALL_PROGRESS_PATH	"/org/tizen/pkgmgr/install/progress"
+#define COMM_STATUS_BROADCAST_DBUS_INSTALL_PROGRESS_INTERFACE "org.tizen.pkgmgr.install.progress"
+#define COMM_STATUS_BROADCAST_EVENT_INSTALL_PROGRESS "install_progress"
+
+#define COMM_STATUS_BROADCAST_DBUS_UPGRADE_SERVICE_PREFIX "org.tizen.pkgmgr.upgrade"
+#define COMM_STATUS_BROADCAST_DBUS_UPGRADE_PATH	"/org/tizen/pkgmgr/upgrade"
+#define COMM_STATUS_BROADCAST_DBUS_UPGRADE_INTERFACE "org.tizen.pkgmgr.upgrade"
+#define COMM_STATUS_BROADCAST_EVENT_UPGRADE "upgrade"
+
+#define COMM_STATUS_BROADCAST_DBUS_GET_SIZE_SERVICE_PREFIX "org.tizen.pkgmgr.get.size"
+#define COMM_STATUS_BROADCAST_DBUS_GET_SIZE_PATH	"/org/tizen/pkgmgr/get/size"
+#define COMM_STATUS_BROADCAST_DBUS_GET_SIZE_INTERFACE "org.tizen.pkgmgr.get.size"
+#define COMM_STATUS_BROADCAST_EVENT_GET_SIZE "get_size"
+
+#define COMM_STATUS_BROADCAST_DBUS_GET_JUNK_INFO_SERVICE_PREFIX "org.tizen.pkgmgr.get.junkinfo"
+#define COMM_STATUS_BROADCAST_DBUS_GET_JUNK_INFO_PATH	"/org/tizen/pkgmgr/get/junkinfo"
+#define COMM_STATUS_BROADCAST_DBUS_GET_JUNK_INFO_INTERFACE "org.tizen.pkgmgr.get.junkinfo"
+#define COMM_STATUS_BROADCAST_EVENT_GET_JUNK_INFO "get_junkinfo"
 
 /********
  * enums
@@ -99,14 +134,47 @@ enum {
 	/* to installer */
 	COMM_REQ_TO_INSTALLER = 1,
 
-	/* to activator */
-	COMM_REQ_TO_ACTIVATOR,
+	/* activate pkg */
+	COMM_REQ_ACTIVATE_PKG,
+
+	/* deactivate pkg */
+	COMM_REQ_DEACTIVATE_PKG,
+
+	/* activate app */
+	COMM_REQ_ACTIVATE_APP,
+
+	/* deactivate app */
+	COMM_REQ_DEACTIVATE_APP,
+
+	/* activate app with label */
+	COMM_REQ_ACTIVATE_APP_WITH_LABEL,
 
 	/* to clearer */
 	COMM_REQ_TO_CLEARER,
 
+	/* to mover*/
+	COMM_REQ_TO_MOVER,
+
 	/* cancel job */
 	COMM_REQ_CANCEL,
+
+	/*get package size */
+	COMM_REQ_GET_SIZE,
+
+	/*kill app */
+	COMM_REQ_KILL_APP,
+
+	/*check app */
+	COMM_REQ_CHECK_APP,
+
+	/* to cache clearer */
+	COMM_REQ_CLEAR_CACHE_DIR,
+
+	/* make external directories for app */
+	COMM_REQ_MAKE_EXTERNAL_DIR,
+
+	/* get junk file information */
+	COMM_REQ_GET_JUNK_INFO,
 
 	COMM_REQ_MAX_SENTINEL
 };
@@ -119,6 +187,19 @@ enum {
 	COMM_RET_QUEUED,
 
 	COMM_RET_MAX_SENTINEL
+};
+
+/* broadcast type */
+enum {
+	COMM_STATUS_BROADCAST_ALL = 1,
+	COMM_STATUS_BROADCAST_INSTALL,
+	COMM_STATUS_BROADCAST_UNINSTALL,
+	COMM_STATUS_BROADCAST_MOVE,
+	COMM_STATUS_BROADCAST_INSTALL_PROGRESS,
+	COMM_STATUS_BROADCAST_UPGRADE,
+	COMM_STATUS_BROADCAST_GET_SIZE,
+	COMM_STATUS_BROADCAST_GET_JUNK_INFO,
+	COMM_STATUS_BROADCAST_MAX
 };
 
 #endif				/* __COMM_CONFIG_H__ */

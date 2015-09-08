@@ -1,0 +1,35 @@
+<manifest>
+	<define>
+		<domain name="pkgmgr"/>
+		<provide>
+			<label name="pkgmgr::svc"/>
+			<label name="pkgmgr::info"/>
+		</provide>
+		<request>
+			<smack request="pkgmgr::svc" type="rwx"/>
+			<smack request="pkgmgr::info" type="rwx"/>
+			<smack request="dbus" type="rwx"/>
+			<smack request="system::homedir" type="rwxat"/>
+			<smack request="system::media" type="rwxat"/>
+			<smack request="ail::db" type="rwx"/>
+			<smack request="system::vconf" type="rwxat"/>
+			<smack request="system::vconf_inhouse" type="rwxat"/>
+			<smack request="pkgmgr::db" type="rwx"/>
+			<smack request="device::sys_logging" type="w"/>
+			<smack request="device::app_logging" type="w"/>
+			<smack request="sdbd" type="r"/>
+		</request>
+	</define>
+	<request>
+		<domain name="pkgmgr"/>
+	</request>
+	<assign>
+		<filesystem path="/usr/bin/pkg_fota" exec_label="pkgmgr"/>
+		<filesystem path="/usr/bin/pkg_initdb" exec_label="pkgmgr"/>
+		<filesystem path="/usr/bin/pkgcmd" exec_label="pkgmgr"/>
+		<filesystem path="/usr/bin/pkginfo" exec_label="pkgmgr"/>
+		<filesystem path="/usr/bin/pkg_getsize" exec_label="pkgmgr"/>
+		<filesystem path="/usr/bin/pkg" exec_label="pkgmgr"/>
+		<filesystem path="/usr/lib/libpkgmgr_parser_lib_sample.so" label="_"/>
+	</assign>
+</manifest>

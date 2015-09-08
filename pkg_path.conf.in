@@ -1,7 +1,6 @@
 # usage 
 # backend:directory_path
 # backendlib:directory_path
-# parserlib:directory_path
+
 backend:/usr/etc/package-manager/backend/
 backendlib:/usr/etc/package-manager/backendlib/
-parserlib:/usr/etc/package-manager/parserlib/

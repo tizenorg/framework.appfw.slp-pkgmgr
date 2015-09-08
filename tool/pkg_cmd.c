@@ -1,3 +1,4 @@
+
 /*
  * slp-pkgmgr
  *
@@ -26,56 +27,82 @@
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <ctype.h>
 #include <getopt.h>
+#include <dirent.h>
+#include <fcntl.h>
+#include <dlfcn.h>
 #include <sys/types.h>
 #include <glib.h>
-#include <ail.h>
 #include <glib-object.h>
+#include <pkgmgr-info.h>
 #include "package-manager.h"
 #include "package-manager-types.h"
 
 #define PKG_TOOL_VERSION	"0.1"
+#define APP_INSTALLATION_PATH_RW	"/opt/usr/apps"
+
+static pkgmgr_client *gpc = NULL;
 
 static int __process_request();
 static void __print_usage();
 static int __is_authorized();
-static int __is_app_installed(char *pkgname);
+static int __is_app_installed(char *pkgid);
 static void __print_pkg_info(pkgmgr_info * pkg_info);
-static int __iter_fn(const char *pkg_type, const char *pkg_name,
-		     const char *version, void *data);
-static int __return_cb(int req_id, const char *pkg_type, const char *pkg_name,
+static int __return_cb(int req_id, const char *pkg_type, const char *pkgid,
 		       const char *key, const char *val, const void *pmsg,
 		       void *data);
 static int __convert_to_absolute_path(char *path);
 
 /* Supported options */
-const char *short_options = "iucADlsd:p:t:n:qh";
+const char *short_options = "iurmcgxCkaADL:Rlsd:p:t:n:T:S:qh";
 const struct option long_options[] = {
 	{"install", 0, NULL, 'i'},
 	{"uninstall", 0, NULL, 'u'},
+	{"reinstall", 0, NULL, 'r'},
+	{"move", 0, NULL, 'm'},
 	{"clear", 0, NULL, 'c'},
+	{"getsize", 0, NULL, 'g'},
 	{"activate", 0, NULL, 'A'},
 	{"deactivate", 0, NULL, 'D'},
+	{"activate with Label", 1, NULL, 'L'},
+	{"reset device", 1, NULL, 'R'},
+	{"check", 0, NULL, 'C'},
+	{"kill", 0, NULL, 'k'},
+	{"app-path", 0, NULL, 'a'},
 	{"list", 0, NULL, 'l'},
 	{"show", 0, NULL, 's'},
 	{"descriptor", 1, NULL, 'd'},
 	{"package-path", 1, NULL, 'p'},
 	{"package-type", 1, NULL, 't'},
 	{"package-name", 1, NULL, 'n'},
+	{"move-type", 1, NULL, 'T'},
+	{"getsize-type", 1, NULL, 'T'},
+	{"csc", 1, NULL, 'S'},
 	{"quiet", 0, NULL, 'q'},
 	{"help", 0, NULL, 'h'},
+	{"get_pkg_size_info", 0, NULL, 'x'},
 	{0, 0, 0, 0}		/* sentinel */
 };
 
 enum pm_tool_request_e {
 	INSTALL_REQ = 1,
 	UNINSTALL_REQ,
+	REINSTALL_REQ,
+	CSC_REQ,
+	GETSIZE_REQ,
 	CLEAR_REQ,
+	MOVE_REQ,
 	ACTIVATE_REQ,
 	DEACTIVATE_REQ,
+	APPPATH_REQ,
+	CHECKAPP_REQ,
+	KILLAPP_REQ,
 	LIST_REQ,
 	SHOW_REQ,
-	HELP_REQ
+	HELP_REQ,
+	GET_PKG_SIZE_INFO_REQ,
+	RESET_DEVICE_REQ
 };
 typedef enum pm_tool_request_e req_type;
 
@@ -83,9 +110,10 @@ struct pm_tool_args_t {
 	req_type request;
 	char pkg_path[PKG_NAME_STRING_LEN_MAX];
 	char pkg_type[PKG_TYPE_STRING_LEN_MAX];
-	char pkg_name[PKG_NAME_STRING_LEN_MAX];
+	char pkgid[PKG_NAME_STRING_LEN_MAX];
 	char des_path[PKG_NAME_STRING_LEN_MAX];
-	int quiet;
+	char label[PKG_NAME_STRING_LEN_MAX];
+	int type;
 	int result;
 };
 typedef struct pm_tool_args_t pm_tool_args;
@@ -93,26 +121,119 @@ pm_tool_args data;
 
 static GMainLoop *main_loop = NULL;
 
-static int __iter_fn(const char *pkg_type, const char *pkg_name,
-		     const char *version, void *data)
+static void __error_no_to_string(int errnumber, char **errstr)
 {
-	printf("pkg_type [%s]\tpkg_name [%s]\tversion [%s]\n", pkg_type,
-	       pkg_name, version);
-	return 0;
+	if (errstr == NULL)
+		return;
+	switch (errnumber) {
+	case PKGCMD_ERR_PACKAGE_NOT_FOUND:
+		*errstr = PKGCMD_ERR_PACKAGE_NOT_FOUND_STR;
+		break;
+	case PKGCMD_ERR_PACKAGE_INVALID:
+		*errstr = PKGCMD_ERR_PACKAGE_INVALID_STR;
+		break;
+	case PKGCMD_ERR_PACKAGE_LOWER_VERSION:
+		*errstr = PKGCMD_ERR_PACKAGE_LOWER_VERSION_STR;
+		break;
+	case PKGCMD_ERR_PACKAGE_EXECUTABLE_NOT_FOUND:
+		*errstr = PKGCMD_ERR_PACKAGE_EXECUTABLE_NOT_FOUND_STR;
+		break;
+	case PKGCMD_ERR_MANIFEST_INVALID:
+		*errstr = PKGCMD_ERR_MANIFEST_INVALID_STR;
+		break;
+	case PKGCMD_ERR_CONFIG_NOT_FOUND:
+		*errstr = PKGCMD_ERR_CONFIG_NOT_FOUND_STR;
+		break;
+	case PKGCMD_ERR_CONFIG_INVALID:
+		*errstr = PKGCMD_ERR_CONFIG_INVALID_STR;
+		break;
+	case PKGCMD_ERR_SIGNATURE_NOT_FOUND:
+		*errstr = PKGCMD_ERR_SIGNATURE_NOT_FOUND_STR;
+		break;
+	case PKGCMD_ERR_SIGNATURE_INVALID:
+		*errstr = PKGCMD_ERR_SIGNATURE_INVALID_STR;
+		break;
+	case PKGCMD_ERR_SIGNATURE_VERIFICATION_FAILED:
+		*errstr = PKGCMD_ERR_SIGNATURE_VERIFICATION_FAILED_STR;
+		break;
+	case PKGCMD_ERR_ROOT_CERTIFICATE_NOT_FOUND:
+		*errstr = PKGCMD_ERR_ROOT_CERTIFICATE_NOT_FOUND_STR;
+		break;
+	case PKGCMD_ERR_CERTIFICATE_INVALID:
+		*errstr = PKGCMD_ERR_CERTIFICATE_INVALID_STR;
+		break;
+	case PKGCMD_ERR_CERTIFICATE_CHAIN_VERIFICATION_FAILED:
+		*errstr = PKGCMD_ERR_CERTIFICATE_CHAIN_VERIFICATION_FAILED_STR;
+		break;
+	case PKGCMD_ERR_CERTIFICATE_EXPIRED:
+		*errstr = PKGCMD_ERR_CERTIFICATE_EXPIRED_STR;
+		break;
+	case PKGCMD_ERR_INVALID_PRIVILEGE:
+		*errstr = PKGCMD_ERR_INVALID_PRIVILEGE_STR;
+		break;
+	case PKGCMD_ERR_PRIVILEGE_UNAUTHORIZED_FAILED:
+		*errstr = PKGCMD_ERR_PRIVILEGE_UNAUTHORIZED_FAILED_STR;
+		break;
+	case PKGCMD_ERR_PRIVILEGE_UNKNOWN_FAILED:
+		*errstr = PKGCMD_ERR_PRIVILEGE_UNKNOWN_FAILED_STR;
+		break;
+	case PKGCMD_ERR_PRIVILEGE_USING_LEGACY_FAILED:
+		*errstr = PKGCMD_ERR_PRIVILEGE_USING_LEGACY_FAILED_STR;
+		break;
+	case PKGCMD_ERR_MENU_ICON_NOT_FOUND:
+		*errstr = PKGCMD_ERR_MENU_ICON_NOT_FOUND_STR;
+		break;
+	case PKGCMD_ERR_FATAL_ERROR:
+		*errstr = PKGCMD_ERR_FATAL_ERROR_STR;
+		break;
+	case PKGCMD_ERR_OUT_OF_STORAGE:
+		*errstr = PKGCMD_ERR_OUT_OF_STORAGE_STR;
+		break;
+	case PKGCMD_ERR_OUT_OF_MEMORY:
+		*errstr = PKGCMD_ERR_OUT_OF_MEMORY_STR;
+		break;
+	case PKGCMD_ERR_ARGUMENT_INVALID:
+		*errstr = PKGCMD_ERR_ARGUMENT_INVALID_STR;
+		break;
+	default:
+		*errstr = PKGCMD_ERR_UNKNOWN_STR;
+		break;
+	}
 }
 
 static int __return_cb(int req_id, const char *pkg_type,
-		       const char *pkg_name, const char *key, const char *val,
+		       const char *pkgid, const char *key, const char *val,
 		       const void *pmsg, void *priv_data)
 {
-	printf("__return_cb req_id[%d] pkg_type[%s] "
-	       "pkg_name[%s] key[%s] val[%s]\n",
-	       req_id, pkg_type, pkg_name, key, val);
+	if (strncmp(key, "error", strlen("error")) == 0) {
+		int ret_val;
+		char delims[] = ":";
+		char *extra_str = NULL;
+		char *ret_result = NULL;
+
+		ret_val = atoi(val);
+		data.result = ret_val;
+
+		strtok((char*)val, delims);
+		ret_result = strtok(NULL, delims);
+		if (ret_result){
+			extra_str = strdup(ret_result);
+			printf("__return_cb req_id[%d] pkg_type[%s] pkgid[%s] key[%s] val[%d] error message: %s\n",
+					   req_id, pkg_type, pkgid, key, ret_val, extra_str);
+			free(extra_str);
+		}
+		else
+			printf("__return_cb req_id[%d] pkg_type[%s] pkgid[%s] key[%s] val[%d]\n",
+					   req_id, pkg_type, pkgid, key, ret_val);
+	} else
+		printf("__return_cb req_id[%d] pkg_type[%s] "
+			   "pkgid[%s] key[%s] val[%s]\n",
+			   req_id, pkg_type, pkgid, key, val);
 
 	if (strncmp(key, "end", strlen("end")) == 0) {
-		if (strncasecmp(val, "ok", strlen("ok")) != 0)
-			data.result = EXIT_FAILURE;	//error_code
-
+		if ((strncmp(val, "fail", strlen("fail")) == 0) && data.result == 0){
+			data.result = PKGCMD_ERR_FATAL_ERROR;
+		}
 		g_main_loop_quit(main_loop);
 	}
 
@@ -131,7 +252,7 @@ static int __convert_to_absolute_path(char *path)
 	strncpy(temp, path, PKG_NAME_STRING_LEN_MAX - 1);
 	if (strchr(path, '/') == NULL) {
 		getcwd(abs, PKG_NAME_STRING_LEN_MAX - 1);
-		if (abs == NULL) {
+		if (abs[0] == '\0') {
 			printf("getcwd() failed\n");
 			return -1;
 		}
@@ -142,7 +263,7 @@ static int __convert_to_absolute_path(char *path)
 	if (strncmp(path, "./", 2) == 0) {
 		ptr = temp;
 		getcwd(abs, PKG_NAME_STRING_LEN_MAX - 1);
-		if (abs == NULL) {
+		if (abs[0] == '\0') {
 			printf("getcwd() failed\n");
 			return -1;
 		}
@@ -154,24 +275,8 @@ static int __convert_to_absolute_path(char *path)
 	return 0;
 }
 
-static int __is_app_installed(char *pkgname)
+static int __is_app_installed(char *pkgid)
 {
-	ail_appinfo_h handle;
-	ail_error_e ret;
-	char *str = NULL;
-	ret = ail_package_get_appinfo(pkgname, &handle);
-	if (ret != AIL_ERROR_OK) {
-		return -1;
-	}
-	ret = ail_appinfo_get_str(handle, AIL_PROP_NAME_STR, &str);
-	if (ret != AIL_ERROR_OK) {
-		return -1;
-	}
-	ret = ail_package_destroy_appinfo(handle);
-	if (ret != AIL_ERROR_OK) {
-		return -1;
-	}
-
 	return 0;
 }
 
@@ -180,27 +285,49 @@ static void __print_usage()
 	printf("\nPackage Manager Tool Version: %s\n\n", PKG_TOOL_VERSION);
 	printf("-i, --install		install the package\n");
 	printf("-u, --uninstall		uninstall the package\n");
+	printf("-r, --reinstall		reinstall the package\n");
 	printf("-c, --clear		clear user data\n");
+	printf("-m, --move		move package\n");
+	printf("-g, --getsize		get size of given package\n");
+	printf("-T, --getsize-type	get type [0 : total size /1: data size]\n");
 	printf("-l, --list		display list of installed packages\n");
 	printf("-s, --show		show detail package info\n");
+	printf("-a, --app-path		show app installation path\n");
+	printf("-C, --check		check if applications belonging to a package are running or not\n");
+	printf("-k, --kill		terminate applications belonging to a package\n");
 	printf("-d, --descriptor	provide descriptor path\n");
 	printf("-p, --package-path	provide package path\n");
 	printf("-n, --package-name	provide package name\n");
 	printf("-t, --package-type	provide package type\n");
-	printf("-q, --quiet		quiet mode operation\n");
+	printf("-T, --move-type	provide move type [0 : move to internal /1: move to external]\n");
 	printf("-h, --help		print this help\n\n");
-	printf("Usage: pkgcmd [options] (--quiet)\n");
-	printf
-	    ("pkgcmd -i -t <pkg type> (-d <descriptor path>) -p <pkg path> (-q)\n");
-	printf("pkgcmd -u -t <pkg type> -n <pkg name> (-q)\n");
-	printf("pkgcmd -l \n");
-	printf("pkgcmd -s -t <pkg type> -p <pkg path> (-q)\n");
-	printf("pkgcmd -s -t <pkg type> -n <pkg name> (-q)\n\n");
+
+	printf("Usage: pkgcmd [options] \n");
+	printf("pkgcmd -i -t <pkg type> (-d <descriptor path>) -p <pkg path> \n");
+	printf("pkgcmd -u -n <pkgid> \n");
+	printf("pkgcmd -r -t <pkg type> -n <pkgid> \n");
+	printf("pkgcmd -l (-t <pkg type>) \n");
+	printf("pkgcmd -s -t <pkg type> -p <pkg path> \n");
+	printf("pkgcmd -s -t <pkg type> -n <pkg name> \n");
+	printf("pkgcmd -m -T <move type> -n <pkg name>\n\n");
+	printf("pkgcmd -g -T <getsize type> -n <pkgid> \n");
+	printf("pkgcmd -C -n <pkgid> \n");
+	printf("pkgcmd -k -n <pkgid> \n");
+
 	printf("Example:\n");
-	printf("pkgcmd -u -t deb -n org.tizen.calculator\n");
-	printf
-	    ("pkgcmd -i -t deb -p /mnt/nfs/org.tizen.calculator_0.1.2-95_armel.deb\n");
-	printf("pkgcmd -c -t deb -n org.tizen.hello\n");
+	printf("pkgcmd -u -n org.tizen.calculator\n");
+	printf("pkgcmd -i -t rpm -p /mnt/nfs/org.tizen.calculator_0.1.2-95_armel.rpm\n");
+	printf("pkgcmd -r -t rpm -n org.tizen.calculator\n");
+	printf("pkgcmd -c -t rpm -n org.tizen.hello\n");
+	printf("pkgcmd -m -T 1 -n org.tizen.hello\n");
+	printf("pkgcmd -C -n org.tizen.hello\n");
+	printf("pkgcmd -k -n org.tizen.hello\n");
+	printf("pkgcmd -a\n");
+	printf("pkgcmd -a -t rpm -n org.tizen.hello\n");
+	printf("pkgcmd -l\n");
+	printf("pkgcmd -l -t tpk\n");
+	printf("pkgcmd -g -T 0 -n org.tizen.calculator\n");
+
 	exit(0);
 
 }
@@ -215,15 +342,21 @@ static void __print_pkg_info(pkgmgr_info *pkg_info)
 		free(temp);
 	}
 
-	temp = pkgmgr_info_get_string(pkg_info, "pkg_name");
+	temp = pkgmgr_info_get_string(pkg_info, "pkgid");
 	if (temp) {
-		printf("pkg_name : %s\n", temp);
+		printf("pkgid : %s\n", temp);
 		free(temp);
 	}
 
 	temp = pkgmgr_info_get_string(pkg_info, "version");
 	if (temp) {
 		printf("version : %s\n", temp);
+		free(temp);
+	}
+
+	temp = pkgmgr_info_get_string(pkg_info, "api_version");
+	if (temp) {
+		printf("api_version : %s\n", temp);
 		free(temp);
 	}
 
@@ -307,17 +440,116 @@ static void __print_pkg_info(pkgmgr_info *pkg_info)
 	}
 }
 
+static int __pkgmgr_list_cb (const pkgmgrinfo_pkginfo_h handle, void *user_data)
+{
+	int ret = -1;
+	char *pkgid = NULL;
+	char *pkg_type = NULL;
+	char *pkg_version = NULL;
+	char *pkg_label = NULL;
+	char *pkg_rootpath = NULL;
+
+	ret = pkgmgrinfo_pkginfo_get_pkgid(handle, &pkgid);
+	if (ret == -1) {
+		printf("Failed to get pkgmgr_pkginfo_get_pkgid\n");
+		return ret;
+	}
+	ret = pkgmgrinfo_pkginfo_get_type(handle, &pkg_type);
+	if (ret == -1) {
+		printf("Failed to get pkgmgr_pkginfo_get_type\n");
+		return ret;
+	}
+	ret = pkgmgrinfo_pkginfo_get_version(handle, &pkg_version);
+	if (ret == -1) {
+		printf("Failed to get pkgmgr_pkginfo_get_version\n");
+		return ret;
+	}
+	ret = pkgmgrinfo_pkginfo_get_label(handle, &pkg_label);
+	if (ret == -1) {
+		printf("Failed to get pkgmgr_pkginfo_get_label\n");
+		return ret;
+	}
+	if (pkg_type && strcmp(pkg_type, "wgt") == 0)
+	{
+		char buf[1024] = {0};
+		ret = pkgmgrinfo_pkginfo_get_root_path(handle, &pkg_rootpath);
+		if (ret == -1) {
+			printf("pkgmgrinfo_pkginfo_get_root_path\n");
+			return ret;
+		}
+
+		snprintf(buf, 1023, "%s/author-signature.xml", pkg_rootpath);
+
+		if (access(buf, F_OK) == 0)
+		{
+			printf("pkg_type [%s]\tpkgid [%s]\tname [%s]\tversion [%s]\tpkg_subtype [%s]\n", pkg_type, pkgid, pkg_label, pkg_version, "hybrid");
+			return ret;
+		}
+	}
+
+	printf("pkg_type [%s]\tpkgid [%s]\tname [%s]\tversion [%s]\n", pkg_type, pkgid, pkg_label, pkg_version);
+
+	return ret;
+}
+
+static int __pkg_list_cb (const pkgmgrinfo_pkginfo_h handle, void *user_data)
+{
+	int ret = -1;
+	char *pkgid;
+
+	ret = pkgmgrinfo_pkginfo_get_pkgid(handle, &pkgid);
+	if(ret < 0) {
+		printf("pkgmgr_pkginfo_get_pkgid() failed\n");
+	}
+
+	ret = pkgmgr_client_request_service(PM_REQUEST_GET_SIZE, PM_GET_TOTAL_SIZE, (pkgmgr_client *)user_data, NULL, pkgid, NULL, NULL, NULL);
+	if (ret < 0){
+		printf("pkgmgr_client_request_service Failed\n");
+		return -1;
+	}
+
+	printf("pkg[%s] size = %d\n", pkgid, ret);
+
+	return 0;
+}
+
+static void __pkg_size_info_recv_cb(pkgmgr_client *pc, const char *pkgid, const pkg_size_info_t *size_info, void *user_data)
+{
+	printf("User get_package_size_info callback called.\n");
+	printf("Internal > data size: %lld, cache size: %lld, app size: %lld\n",
+			size_info->data_size, size_info->cache_size, size_info->app_size);
+	printf("External > data size: %lld, cache size: %lld, app size: %lld\n",
+			size_info->ext_data_size, size_info->ext_cache_size, size_info->ext_app_size);
+
+	pkgmgr_client_free(pc);
+	g_main_loop_quit(main_loop);
+}
+
+static void __total_pkg_size_info_recv_cb(pkgmgr_client *pc, const pkg_size_info_t *size_info, void *user_data)
+{
+	printf("User get_total_package_size_info callback called.\n");
+	printf("Internal > data size: %lld, cache size: %lld, app size: %lld\n",
+			size_info->data_size, size_info->cache_size, size_info->app_size);
+	printf("External > data size: %lld, cache size: %lld, app size: %lld\n",
+			size_info->ext_data_size, size_info->ext_cache_size, size_info->ext_app_size);
+
+	pkgmgr_client_free(pc);
+	g_main_loop_quit(main_loop);
+}
+
 static int __process_request()
 {
 	int ret = -1;
-	int mode = PM_DEFAULT;
+	int mode = PM_QUIET;
 	pkgmgr_client *pc = NULL;
+	char buf[1024] = {'\0'};
+	int pid = -1;
 	switch (data.request) {
 	case INSTALL_REQ:
-		if (data.pkg_type[0] == '\0' || data.pkg_path[0] == '\0') {
+		if (data.pkg_path[0] == '\0') {
 			printf("Please provide the arguments.\n");
 			printf("use -h option to see usage\n");
-			ret = -1;
+			data.result = PKGCMD_ERR_ARGUMENT_INVALID;
 			break;
 		}
 		g_type_init();
@@ -325,13 +557,14 @@ static int __process_request()
 		pc = pkgmgr_client_new(PC_REQUEST);
 		if (pc == NULL) {
 			printf("PkgMgr Client Creation Failed\n");
-			ret = -1;
+			data.result = PKGCMD_ERR_FATAL_ERROR;
 			break;
 		}
-		if (data.quiet == 0)
-			mode = PM_DEFAULT;
-		else
-			mode = PM_QUIET;
+
+		if (data.pkg_type[0] == '\0') {
+			strncpy(data.pkg_type, "rpm", PKG_TYPE_STRING_LEN_MAX - 1);
+		}
+
 		if (data.des_path[0] == '\0')
 			ret =
 			    pkgmgr_client_install(pc, data.pkg_type, NULL,
@@ -342,17 +575,21 @@ static int __process_request()
 			    pkgmgr_client_install(pc, data.pkg_type,
 						  data.des_path, data.pkg_path,
 						  NULL, mode, __return_cb, pc);
-		if (ret < 0)
+		if (ret < 0){
+			data.result = PKGCMD_ERR_FATAL_ERROR;
+			if (access(data.pkg_path, F_OK) != 0)
+				data.result = PKGCMD_ERR_PACKAGE_NOT_FOUND;
 			break;
+		}
 		g_main_loop_run(main_loop);
 		ret = data.result;
 		break;
 
 	case UNINSTALL_REQ:
-		if (data.pkg_type[0] == '\0' || data.pkg_name[0] == '\0') {
+		if (data.pkgid[0] == '\0') {
 			printf("Please provide the arguments.\n");
 			printf("use -h option to see usage\n");
-			ret = -1;
+			data.result = PKGCMD_ERR_ARGUMENT_INVALID;
 			break;
 		}
 		g_type_init();
@@ -360,38 +597,60 @@ static int __process_request()
 		pc = pkgmgr_client_new(PC_REQUEST);
 		if (pc == NULL) {
 			printf("PkgMgr Client Creation Failed\n");
-			ret = -1;
+			data.result = PKGCMD_ERR_FATAL_ERROR;
 			break;
 		}
-		if (data.quiet == 0)
-			mode = PM_DEFAULT;
-		else
-			mode = PM_QUIET;
-#if 0
-		ret = __is_app_installed(data.pkg_name);
+
+
+		ret = __is_app_installed(data.pkgid);
 		if (ret == -1) {
 			printf("package is not installed\n");
 			break;
 		}
-#else
-		pkgmgr_pkginfo_h handle;
-		ret = pkgmgr_get_pkginfo(data.pkg_name, &handle);
-		if(ret < 0) {
-			printf("package is not in pkgmgr_info DB\n");
-		} else
-			pkgmgr_destroy_pkginfo(handle);
-#endif
+
 		ret =
-		    pkgmgr_client_uninstall(pc, data.pkg_type, data.pkg_name,
+		    pkgmgr_client_uninstall(pc, data.pkg_type, data.pkgid,
 					    mode, __return_cb, NULL);
-		if (ret < 0)
+		if (ret < 0){
+			data.result = PKGCMD_ERR_FATAL_ERROR;
+			if (access(data.pkg_path, F_OK) != 0)
+				data.result = PKGCMD_ERR_PACKAGE_NOT_FOUND;
 			break;
+		}
+		g_main_loop_run(main_loop);
+		ret = data.result;
+		break;
+
+	case REINSTALL_REQ:
+		if (data.pkg_type[0] == '\0' || data.pkgid[0] == '\0') {
+			printf("Please provide the arguments.\n");
+			printf("use -h option to see usage\n");
+			data.result = PKGCMD_ERR_ARGUMENT_INVALID;
+			break;
+		}
+		g_type_init();
+		main_loop = g_main_loop_new(NULL, FALSE);
+		pc = pkgmgr_client_new(PC_REQUEST);
+		if (pc == NULL) {
+			printf("PkgMgr Client Creation Failed\n");
+			data.result = PKGCMD_ERR_FATAL_ERROR;
+			break;
+		}
+
+
+		ret = pkgmgr_client_reinstall(pc, data.pkg_type, data.pkgid, NULL, mode, __return_cb, pc);
+		if (ret < 0){
+			data.result = PKGCMD_ERR_FATAL_ERROR;
+			if (access(data.pkg_path, F_OK) != 0)
+				data.result = PKGCMD_ERR_PACKAGE_NOT_FOUND;
+			break;
+		}
 		g_main_loop_run(main_loop);
 		ret = data.result;
 		break;
 
 	case CLEAR_REQ:
-		if (data.pkg_type[0] == '\0' || data.pkg_name[0] == '\0') {
+		if (data.pkg_type[0] == '\0' || data.pkgid[0] == '\0') {
 			printf("Please provide the arguments.\n");
 			printf("use -h option to see usage\n");
 			ret = -1;
@@ -404,24 +663,21 @@ static int __process_request()
 			ret = -1;
 			break;
 		}
-		if (data.quiet == 0)
-			mode = PM_DEFAULT;
-		else
-			mode = PM_QUIET;
-		ret = __is_app_installed(data.pkg_name);
+
+		ret = __is_app_installed(data.pkgid);
 		if (ret == -1) {
 			printf("package is not installed\n");
 			break;
 		}
 		ret = pkgmgr_client_clear_user_data(pc, data.pkg_type,
-						    data.pkg_name, mode);
+						    data.pkgid, mode);
 		if (ret < 0)
 			break;
 		ret = data.result;
 		break;
 
 	case ACTIVATE_REQ:
-		if (data.pkg_type[0] == '\0' || data.pkg_name[0] == '\0') {
+		if (data.pkg_type[0] == '\0' || data.pkgid[0] == '\0') {
 			printf("Please provide the arguments.\n");
 			printf("use -h option to see usage\n");
 			ret = -1;
@@ -435,16 +691,32 @@ static int __process_request()
 			break;
 		}
 
-		ret = pkgmgr_client_activate(pc, data.pkg_type, data.pkg_name);
-		if (ret < 0)
-			break;
+		if ( strcmp(data.pkg_type, "app") == 0 ) {
+			if (strlen(data.label) == 0) {
+				ret = pkgmgr_client_activate_app(pc, data.pkgid);
+				if (ret < 0)
+					break;
+			} else {
+				printf("label [%s]\n", data.label);
+				char *largv[3] = {NULL, };
+				largv[0] = "-l";
+				largv[1] = data.label;
+				ret = pkgmgr_client_activate_appv(pc, data.pkgid, largv);
+				if (ret < 0)
+					break;
+			}
+		} else {
+			ret = pkgmgr_client_activate(pc, data.pkg_type, data.pkgid);
+			if (ret < 0)
+				break;
+		}
 		ret = data.result;
 
 		break;
 
 
 	case DEACTIVATE_REQ:
-		if (data.pkg_type[0] == '\0' || data.pkg_name[0] == '\0') {
+		if (data.pkg_type[0] == '\0' || data.pkgid[0] == '\0') {
 			printf("Please provide the arguments.\n");
 			printf("use -h option to see usage\n");
 			ret = -1;
@@ -458,21 +730,166 @@ static int __process_request()
 			break;
 		}
 
-		ret = pkgmgr_client_deactivate(pc, data.pkg_type, data.pkg_name);
-		if (ret < 0)
-			break;
+		if ( strcmp(data.pkg_type, "app") == 0 ) {
+			ret = pkgmgr_client_deactivate_app(pc, data.pkgid);
+			if (ret < 0)
+				break;
+		} else {
+			ret = pkgmgr_client_deactivate(pc, data.pkg_type, data.pkgid);
+			if (ret < 0)
+				break;
+		}
 		ret = data.result;
 
 		break;
 
-	case LIST_REQ:
-		ret = pkgmgr_get_pkg_list(__iter_fn, NULL);
+	case MOVE_REQ:
+		if (data.pkgid[0] == '\0') {
+			printf("Please provide the arguments.\n");
+			printf("use -h option to see usage\n");
+			ret = -1;
+			break;
+		}
+
+		g_type_init();
+		main_loop = g_main_loop_new(NULL, FALSE);
+
+		pc = pkgmgr_client_new(PC_REQUEST);
+		if (pc == NULL) {
+			printf("PkgMgr Client Creation Failed\n");
+			ret = -1;
+			break;
+		}
+
+		ret = __is_app_installed(data.pkgid);
+		if (ret == -1) {
+			printf("package is not installed\n");
+			break;
+		}
+
+		ret = pkgmgr_client_move(pc, data.pkgid, data.type, __return_cb, NULL);
+
+		printf("pkg[%s] move result = %d\n", data.pkgid, ret);
+
+		if (ret < 0)
+			break;
+
+		g_main_loop_run(main_loop);
+
+		ret = data.result;
 		break;
 
+	case APPPATH_REQ:
+		if (data.pkg_type[0] == '\0' && data.pkgid[0] == '\0') {
+			printf("Tizen Application Installation Path: %s\n", APP_INSTALLATION_PATH_RW);
+			ret = 0;
+			break;
+		}
+		if ((data.pkg_type[0] == '\0') || (data.pkgid[0] == '\0')) {
+			printf("Use -h option to see usage\n");
+			ret = -1;
+			break;
+		}
+		if (strncmp(data.pkg_type, "rpm", PKG_TYPE_STRING_LEN_MAX - 1) == 0) {
+			snprintf(buf, 1023, "%s/%s", APP_INSTALLATION_PATH_RW, data.pkgid);
+			printf("Tizen Application Installation Path: %s\n", buf);
+			ret = 0;
+			break;
+		} else if (strncmp(data.pkg_type, "wgt", PKG_TYPE_STRING_LEN_MAX - 1) == 0) {
+			snprintf(buf, 1023, "%s/%s/res/wgt", APP_INSTALLATION_PATH_RW, data.pkgid);
+			printf("Tizen Application Installation Path: %s\n", buf);
+			ret = 0;
+			break;
+		} else if (strncmp(data.pkg_type, "tpk", PKG_TYPE_STRING_LEN_MAX - 1) == 0) {
+			snprintf(buf, 1023, "%s/%s", APP_INSTALLATION_PATH_RW, data.pkgid);
+			printf("Tizen Application Installation Path: %s\n", buf);
+			ret = 0;
+			break;
+		} else {
+			printf("Invalid package type.\n");
+			printf("use -h option to see usage\n");
+			ret = -1;
+			break;
+		}
+		break;
+
+	case KILLAPP_REQ:
+	case CHECKAPP_REQ:
+		if (data.pkgid[0] == '\0') {
+			printf("Please provide the arguments.\n");
+			printf("use -h option to see usage\n");
+			data.result = PKGCMD_ERR_ARGUMENT_INVALID;
+			break;
+		}
+
+		pc = pkgmgr_client_new(PC_REQUEST);
+		if (pc == NULL) {
+			printf("PkgMgr Client Creation Failed\n");
+			data.result = PKGCMD_ERR_FATAL_ERROR;
+			break;
+		}
+
+		if (data.request == KILLAPP_REQ) {
+			ret = pkgmgr_client_request_service(PM_REQUEST_KILL_APP, 0, pc, NULL, data.pkgid, NULL, NULL, &pid);
+			if (ret < 0){
+				data.result = PKGCMD_ERR_FATAL_ERROR;
+				break;
+			}
+			if (pid)
+				printf("Pkgid: %s is Terminated\n", data.pkgid);
+			else
+				printf("Pkgid: %s is already Terminated\n", data.pkgid);
+
+		} else if (data.request == CHECKAPP_REQ) {
+			ret = pkgmgr_client_request_service(PM_REQUEST_CHECK_APP, 0, pc, NULL, data.pkgid, NULL, NULL, &pid);
+			if (ret < 0){
+				data.result = PKGCMD_ERR_FATAL_ERROR;
+				break;
+			}
+
+			if (pid)
+				printf("Pkgid: %s is Running\n", data.pkgid);
+			else
+				printf("Pkgid: %s is Not Running\n", data.pkgid);
+		}
+		ret = data.result;
+		break;
+
+	case LIST_REQ:
+		if (data.pkg_type[0] == '\0') {
+			ret = pkgmgrinfo_pkginfo_get_list(__pkgmgr_list_cb, NULL);
+			if (ret == -1) {
+				printf("Failed to get package list\n");
+				break;
+			}
+			break;
+		} else {
+			pkgmgrinfo_pkginfo_filter_h handle;
+			ret = pkgmgrinfo_pkginfo_filter_create(&handle);
+			if (ret == -1) {
+				printf("Failed to get package filter handle\n");
+				break;
+			}
+			ret = pkgmgrinfo_pkginfo_filter_add_string(handle, PMINFO_PKGINFO_PROP_PACKAGE_TYPE, data.pkg_type);
+			if (ret == -1) {
+				printf("Failed to add package type filter\n");
+				pkgmgrinfo_pkginfo_filter_destroy(handle);
+				break;
+			}
+			ret = pkgmgrinfo_pkginfo_filter_foreach_pkginfo(handle, __pkgmgr_list_cb, NULL);
+			if (ret == -1) {
+				printf("Failed to get package filter list\n");
+				pkgmgrinfo_pkginfo_filter_destroy(handle);
+				break;
+			}
+			pkgmgrinfo_pkginfo_filter_destroy(handle);
+			break;
+		}
+
 	case SHOW_REQ:
-		if (data.pkg_name[0] != '\0') {
+		if (data.pkgid[0] != '\0') {
 			pkgmgr_info *pkg_info =
-			    pkgmgr_info_new(data.pkg_type, data.pkg_name);
+			    pkgmgr_info_new(data.pkg_type, data.pkgid);
 			if (pkg_info == NULL) {
 				printf("Failed to get pkginfo handle\n");
 				ret = -1;
@@ -483,9 +900,7 @@ static int __process_request()
 			break;
 		}
 		if (data.pkg_path[0] != '\0') {
-			pkgmgr_info *pkg_info =
-			    pkgmgr_info_new_from_file(data.pkg_type,
-						      data.pkg_path);
+			pkgmgr_info *pkg_info =  pkgmgr_client_check_pkginfo_from_file(data.pkg_path);
 			if (pkg_info == NULL) {
 				printf("Failed to get pkginfo handle\n");
 				ret = -1;
@@ -495,8 +910,77 @@ static int __process_request()
 			ret = pkgmgr_info_free(pkg_info);
 			break;
 		}
-		printf("Either pkgname or pkgpath should be supplied\n");
+		printf("Either pkgid or pkgpath should be supplied\n");
 		ret = -1;
+		break;
+
+	case CSC_REQ:
+		ret = pkgmgr_client_request_service(PM_REQUEST_CSC, 0, NULL, NULL, NULL, data.des_path, NULL, (void *)data.pkg_path);
+		if (ret < 0)
+			data.result = PKGCMD_ERR_FATAL_ERROR;
+		break;
+
+	case GETSIZE_REQ:
+		if (data.pkgid[0] == '\0') {
+			printf("Please provide the arguments.\n");
+			printf("use -h option to see usage\n");
+			ret = -1;
+			break;
+		}
+
+		pc = pkgmgr_client_new(PC_REQUEST);
+		if (pc == NULL) {
+			printf("PkgMgr Client Creation Failed\n");
+			data.result = PKGCMD_ERR_FATAL_ERROR;
+			break;
+		}
+
+		if (data.type == 9) {
+			ret = pkgmgrinfo_pkginfo_get_list(__pkg_list_cb, (void *)pc);
+			break;
+		}
+
+		ret = pkgmgr_client_request_service(PM_REQUEST_GET_SIZE, data.type, pc, NULL, data.pkgid, NULL, NULL, NULL);
+		if (ret < 0){
+			data.result = PKGCMD_ERR_FATAL_ERROR;
+			break;
+		}
+
+		printf("pkg[%s] size = %d\n", data.pkgid, ret);
+		ret = data.result;
+		break;
+
+	case GET_PKG_SIZE_INFO_REQ:
+		main_loop = g_main_loop_new(NULL, FALSE);
+		gpc = pkgmgr_client_new(PC_REQUEST);
+		if (gpc == NULL) {
+			printf("PkgMgr Client Creation Failed\n");
+			data.result = PKGCMD_ERR_FATAL_ERROR;
+			break;
+		}
+
+		if (strcmp(data.pkgid, PKG_SIZE_INFO_TOTAL) == 0)
+		{
+			ret = pkgmgr_client_get_total_package_size_info(gpc, __total_pkg_size_info_recv_cb, NULL);
+
+		}
+		else
+		{
+			ret = pkgmgr_client_get_package_size_info(gpc, data.pkgid, __pkg_size_info_recv_cb, NULL);
+		}
+		if (ret < 0){
+			data.result = PKGCMD_ERR_FATAL_ERROR;
+			break;
+		}
+
+		printf("pkg[%s] ret: %d\n", data.pkgid, ret);
+		ret = data.result;
+
+		g_main_loop_run(main_loop);
+		break;
+
+	case RESET_DEVICE_REQ:
+		ret = pkgmgr_client_reset_device();
 		break;
 
 	case HELP_REQ:
@@ -520,7 +1004,7 @@ static int __process_request()
 static int __is_authorized()
 {
 	/* pkgcmd needs root or developer privileges.
-	   If launched via fork/exec, the launching program 
+	   If launched via fork/exec, the launching program
 	   must be running as root */
 
 	uid_t uid = getuid();
@@ -536,22 +1020,30 @@ int main(int argc, char *argv[])
 	int opt_idx = 0;
 	int c = -1;
 	int ret = -1;
+	char *errstr = NULL;
+	long starttime;
+	long endtime;
+	struct timeval tv;
 
 	if (!__is_authorized()) {
 		printf("You are not an authorized user!\n");
-		return -1;
+		return PKGCMD_ERR_FATAL_ERROR;
 	}
 
 	if (argc == 1)
 		__print_usage();
 
+	gettimeofday(&tv, NULL);
+	starttime = tv.tv_sec * 1000l + tv.tv_usec / 1000l;
+
 	data.request = -1;
 	memset(data.des_path, '\0', PKG_NAME_STRING_LEN_MAX);
 	memset(data.pkg_path, '\0', PKG_NAME_STRING_LEN_MAX);
-	memset(data.pkg_name, '\0', PKG_NAME_STRING_LEN_MAX);
+	memset(data.pkgid, '\0', PKG_NAME_STRING_LEN_MAX);
 	memset(data.pkg_type, '\0', PKG_TYPE_STRING_LEN_MAX);
-	data.quiet = 0;
+	memset(data.label, '\0', PKG_TYPE_STRING_LEN_MAX);
 	data.result = 0;
+	data.type = -1;
 	while (1) {
 		c = getopt_long(argc, argv, short_options, long_options,
 				&opt_idx);
@@ -566,8 +1058,31 @@ int main(int argc, char *argv[])
 			data.request = UNINSTALL_REQ;
 			break;
 
+		case 'r':	/* reinstall */
+			data.request = REINSTALL_REQ;
+			break;
+
 		case 'c':	/* clear */
 			data.request = CLEAR_REQ;
+			break;
+
+		case 'g':	/* get pkg size */
+			data.request = GETSIZE_REQ;
+			break;
+
+		case 'x':	/* get pkg size info */
+			data.request = GET_PKG_SIZE_INFO_REQ;
+			break;
+
+		case 'm':	/* move */
+			data.request = MOVE_REQ;
+			break;
+
+		case 'S': /* csc packages */
+			data.request = CSC_REQ;
+			if (optarg)
+				strncpy(data.des_path, optarg, PKG_NAME_STRING_LEN_MAX - 1);
+			printf("csc file is %s\n", data.des_path);
 			break;
 
 		case 'A':	/* activate */
@@ -576,6 +1091,29 @@ int main(int argc, char *argv[])
 
 		case 'D':	/* deactivate */
 			data.request = DEACTIVATE_REQ;
+			break;
+
+		case 'L':	/* activate with Label */
+			data.request = ACTIVATE_REQ;
+			if (optarg)
+				strncpy(data.label, optarg,
+					PKG_NAME_STRING_LEN_MAX - 1);
+			break;
+
+		case 'R':	/* device reset */
+			data.request = RESET_DEVICE_REQ;
+			break;
+
+		case 'a':	/* app installation path */
+			data.request = APPPATH_REQ;
+			break;
+
+		case 'k':	/* Terminate applications of a package */
+			data.request = KILLAPP_REQ;
+			break;
+
+		case 'C':	/* Check running status of applications of a package */
+			data.request = CHECKAPP_REQ;
 			break;
 
 		case 'l':	/* list */
@@ -589,39 +1127,39 @@ int main(int argc, char *argv[])
 		case 'p':	/* package path */
 			if (optarg)
 				strncpy(data.pkg_path, optarg,
-					PKG_NAME_STRING_LEN_MAX);
+					PKG_NAME_STRING_LEN_MAX - 1);
 			ret = __convert_to_absolute_path(data.pkg_path);
 			if (ret == -1) {
 				printf("conversion of relative path to absolute path failed\n");
 				return -1;
 			}
-			printf("package path is %s\n", data.pkg_path);
+			printf("path is %s\n", data.pkg_path);
 			break;
 
 		case 'd':	/* descriptor path */
 			if (optarg)
 				strncpy(data.des_path, optarg,
-					PKG_NAME_STRING_LEN_MAX);
+					PKG_NAME_STRING_LEN_MAX - 1);
 			break;
 
 		case 'n':	/* package name */
 			if (optarg)
-				strncpy(data.pkg_name, optarg,
-					PKG_NAME_STRING_LEN_MAX);
+				strncpy(data.pkgid, optarg,
+					PKG_NAME_STRING_LEN_MAX - 1);
 			break;
 
 		case 't':	/* package type */
 			if (optarg)
 				strncpy(data.pkg_type, optarg,
-					PKG_TYPE_STRING_LEN_MAX);
+					PKG_TYPE_STRING_LEN_MAX - 1);
+			break;
+
+		case 'T':	/* move type */
+			data.type = atoi(optarg);
 			break;
 
 		case 'h':	/* help */
 			data.request = HELP_REQ;
-			break;
-
-		case 'q':	/* quiet mode */
-			data.quiet = 1;
 			break;
 
 			/* Otherwise */
@@ -638,8 +1176,21 @@ int main(int argc, char *argv[])
 		}
 	}
 	ret = __process_request();
+	if ((ret == -1) && (data.result != 0))
+		data.result = PKGCMD_ERR_ARGUMENT_INVALID;
+
 	if (ret != 0) {
-		printf("processing request %d failed\n", data.request);
+		__error_no_to_string(data.result, &errstr);
+		printf("processing result : %s [%d] failed\n", errstr, data.result);
+	} else {
+		if (data.request == INSTALL_REQ)
+			sleep(2);
 	}
-	return ret;
+
+
+	gettimeofday(&tv, NULL);
+	endtime = tv.tv_sec * 1000l + tv.tv_usec / 1000l;
+	printf("spend time for pkgcmd is [%d]ms\n", (int)(endtime - starttime));
+
+	return data.result;
 }

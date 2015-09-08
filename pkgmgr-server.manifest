@@ -1,0 +1,21 @@
+<manifest>
+	<define>
+		<domain name="pkgmgr-server"/>
+		<request>
+			<smack request="system::homedir" type="rwxat"/>
+			<smack request="security-server::api-cookie-check" type="w"/>
+			<smack request="system::use_internet" type="w"/>
+			<smack request="deviced::display" type="rw"/>
+		</request>
+		<permit>
+			<smack permit="system::use_internet" type="w"/>
+		</permit>
+	</define>
+	<request>
+		<domain name="pkgmgr-server"/>
+	</request>
+	<assign>
+		<filesystem path="/usr/bin/pkgmgr-server" exec_label="pkgmgr-server"/>
+		<filesystem path="/usr/share/dbus-1/services/org.tizen.pkgmgr.service" label="_" exec_label="none"/>
+	</assign>
+</manifest>

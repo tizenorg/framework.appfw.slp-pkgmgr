@@ -28,10 +28,10 @@ static GMainLoop *mainloop;
 
 void
 stat_cb(void *data, const char *req_id, const char *pkg_type,
-	const char *pkg_name, const char *key, const char *val)
+	const char *pkgid, const char *key, const char *val)
 {
 	printf(">>user callback>> Got: %s %s %s %s %s\n", req_id, pkg_type,
-	       pkg_name, key, val);
+	       pkgid, key, val);
 
 	g_main_loop_quit(mainloop);
 }
@@ -49,8 +49,9 @@ int main(int argc, char **argv)
 				  "dpkg", "test_pkg", "arg1 arg2 arg3",
 				  "this_is_a_cookie", 0);
 
+	printf("comm_client_request returns [%d]\n",ret);
 	printf("client: waiting signal...\n");
-	comm_client_set_status_callback(cc, stat_cb, NULL);
+	comm_client_set_status_callback(COMM_STATUS_BROADCAST_ALL, cc, stat_cb, NULL);
 
 	g_main_loop_run(mainloop);
 

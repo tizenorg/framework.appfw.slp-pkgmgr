@@ -1,0 +1,5 @@
+[D-BUS Service]
+Name=org.tizen.pkgmgr
+Exec=/bin/false
+SystemdService=slp-pkgmgr.service
+User=root
