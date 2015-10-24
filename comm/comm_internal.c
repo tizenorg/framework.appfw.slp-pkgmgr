@@ -20,16 +20,43 @@
  *
  */
 
+#include "comm_config.h"
+#include <stdio.h>
+#include <vasum.h>
 
+#define ZONE_HOST "host"
 
+int get_zone_name(int pid, char *zone_name, int len)
+{
+	vsm_zone_h zone;
+	vsm_context_h ctx = vsm_create_context();
+	const char *zone_name_tmp = NULL;
+	int ret = 0;
+	if (ctx == NULL) {
+			ERR("vsm_create_context failed");
+			return -1;
+	}
+	zone = vsm_lookup_zone_by_pid(ctx, pid);
 
+	if (zone != NULL && !vsm_is_host_zone(zone)) {
+		zone_name_tmp = vsm_get_zone_name(zone);
+		if (zone_name_tmp == NULL) {
+			ERR("failed to get zone");
+			ret = -1;
+			goto err;
+		}
+	} else if (vsm_is_host_zone(zone)) {
+		zone_name_tmp = ZONE_HOST;
+	} else {
+		ERR("could not get zone name");
+		ret = -1;
+		goto err;
+	}
 
-typedef struct comm_socket comm_socket;
+	snprintf(zone_name, len, "%s", zone_name_tmp);
+err:
+	if (vsm_cleanup_context(ctx) != 0)
+		ERR("vsm cleanup failed");
+	return ret;
 
-comm_socket *_comm_socket_new(void);
-int _comm_socket_free(comm_socket *csc);
-int _comm_socket_connect(comm_socket *csc, const char *server_sock_path);
-int _comm_socket_disconnect(comm_socket *csc);
-int _comm_socket_create_server(comm_socket *cs, const char *sock_path);
-int _comm_socket_send(comm_socket *csc, void **data, int *datasize);
-int _comm_socket_recv(comm_socket *csc, void *data, int datasize);
+}

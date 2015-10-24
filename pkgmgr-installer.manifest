@@ -12,5 +12,7 @@
                 <filesystem path="/usr/lib/libpkgmgr_installer_client.so.0.1.0" label="_"/>
                 <filesystem path="/usr/lib/libpkgmgr_installer_status_broadcast_server.so.0" label="_"/>
                 <filesystem path="/usr/lib/libpkgmgr_installer_status_broadcast_server.so.0.1.0" label="_"/>
+		<filesystem path="/usr/lib/libpkgmgr_installer_pkg_mgr_server.so.0" label="_"/>
+		<filesystem path="/usr/lib/libpkgmgr_installer_pkg_mgr_server.so.0.1.0" label="_"/>
         </assign>
 </manifest>

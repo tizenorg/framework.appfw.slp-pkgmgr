@@ -31,9 +31,106 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
+#include <fcntl.h>
 #include "comm_config.h"
 #include "comm_client.h"
-#include "comm_pkg_mgr_client_gdbus_generated.h"
+#include "comm_internal.h"
+#include "comm_pkg_mgr_gdbus_generated.h"
+
+#define MAX_ZONE_NAME_LEN 128
+#define ZONE_HOST "host"
+
+static bool unmatched_zone_filter(const char *zone, const char *signal)
+{
+	int len_zone = 0;
+	int len_sig = strlen(signal);
+	bool filtered = true;
+	char temp[MAX_ZONE_NAME_LEN] = {0, };
+
+	if (!zone)
+		filtered = false;
+
+	if (zone && strlen(zone)) {
+		len_zone = strlen(zone);
+		if (strcmp(zone, ZONE_HOST) == 0) {
+			filtered = false;
+		} else {
+			if (len_sig >= len_zone) {
+				snprintf(temp, len_zone + 1, "%s", &signal[len_sig - len_zone]);
+
+				if (strcmp(temp, zone) == 0) {
+					filtered = false;
+				}
+			}
+		}
+	}
+
+	if (filtered && zone) {
+		dbg("filtered : (%s, %s, %d)\n", signal, zone, len_sig - len_zone);
+	}
+
+	return filtered;
+}
+
+static int get_sender_zone_name(const char *zone, const char *signal, char *sender_zone)
+{
+	int len_sig = 0;
+	int len_sig_tmp = 0;
+	int diff = 0;
+	int ret = -1;
+	char temp[MAX_ZONE_NAME_LEN] = {0, };
+
+	if (!zone || !signal)
+		return -1;
+
+	len_sig = strlen(signal);
+
+	if (strcmp(zone, ZONE_HOST)) {
+		/* skip, unless host zone */
+		return -1;
+	}
+
+	if (signal && len_sig) {
+		if (!strncmp(signal, COMM_STATUS_BROADCAST_SIGNAL_STATUS,
+			LEN_COMM_STATUS_BROADCAST_SIGNAL_STATUS)) {
+			len_sig_tmp = LEN_COMM_STATUS_BROADCAST_SIGNAL_STATUS;
+		} else if (!strncmp(signal, COMM_STATUS_BROADCAST_EVENT_INSTALL,
+			LEN_COMM_STATUS_BROADCAST_EVENT_INSTALL)) {
+			len_sig_tmp = LEN_COMM_STATUS_BROADCAST_EVENT_INSTALL;
+		} else if (!strncmp(signal, COMM_STATUS_BROADCAST_EVENT_UNINSTALL,
+			LEN_COMM_STATUS_BROADCAST_EVENT_UNINSTALL)) {
+			len_sig_tmp = LEN_COMM_STATUS_BROADCAST_EVENT_UNINSTALL;
+		} else if (!strncmp(signal, COMM_STATUS_BROADCAST_EVENT_UPGRADE,
+			LEN_COMM_STATUS_BROADCAST_EVENT_UPGRADE)) {
+			len_sig_tmp = LEN_COMM_STATUS_BROADCAST_EVENT_UPGRADE;
+		} else if (!strncmp(signal, COMM_STATUS_BROADCAST_EVENT_MOVE,
+			LEN_COMM_STATUS_BROADCAST_EVENT_MOVE)) {
+			len_sig_tmp = LEN_COMM_STATUS_BROADCAST_EVENT_MOVE;
+		} else if (!strncmp(signal, COMM_STATUS_BROADCAST_EVENT_GET_SIZE,
+			LEN_COMM_STATUS_BROADCAST_EVENT_GET_SIZE)) {
+			len_sig_tmp = LEN_COMM_STATUS_BROADCAST_EVENT_GET_SIZE;
+		} else if (!strncmp(signal, COMM_STATUS_BROADCAST_EVENT_INSTALL_PROGRESS,
+			LEN_COMM_STATUS_BROADCAST_EVENT_INSTALL_PROGRESS)) {
+			len_sig_tmp = LEN_COMM_STATUS_BROADCAST_EVENT_INSTALL_PROGRESS;
+		}
+
+		if (len_sig_tmp) {
+			if (len_sig > len_sig_tmp) {
+				len_sig_tmp += 1; /* for '_' */
+				diff = len_sig - len_sig_tmp;
+				snprintf(temp, diff + 1, "%s", &signal[len_sig_tmp]);
+
+				if (strlen(temp)) {
+					memcpy(sender_zone, temp, strlen(temp));
+					dbg("temp(%s), sender_zone(%s)", temp, sender_zone);
+					ret = 0;
+				}
+			}
+		}
+	}
+
+	return ret;
+}
 
 /*******************
  * ADT description
@@ -85,6 +182,45 @@ static int __retry_request(comm_client *cc,
 	return TRUE;
 }
 
+#ifdef _APPFW_FEATURE_EXPANSION_PKG_INSTALL
+static bool __retry_request_with_tep(comm_client *cc,
+	const gchar *req_id,
+	gint req_type,
+	const gchar *pkg_type,
+	const gchar *pkgid,
+	const gchar *tep_path,
+	const gchar *args,
+	const gchar *cookie,
+	gint *ret)
+{
+	OrgTizenPkgmgr *proxy;
+	GError *error = NULL;
+	int rc = 0;
+
+	ERR("tep_install request send failed, retrying...");
+
+	proxy = org_tizen_pkgmgr_proxy_new_sync(cc->conn,
+			G_DBUS_PROXY_FLAGS_NONE, COMM_PKG_MGR_DBUS_SERVICE,
+			COMM_PKG_MGR_DBUS_PATH,
+			NULL, &error);
+	if (proxy == NULL) {
+		ERR("Unable to create proxy[rc=%d, err=%s]\n", rc, error->message);
+		return FALSE;
+	}
+
+	//jungh function name should be checked
+	org_tizen_pkgmgr_call_tep_request_sync(proxy,
+			req_id, req_type, pkg_type, pkgid, tep_path, args, cookie, ret, NULL, &error);
+#if 0
+	if (!rc) {
+		ERR("Failed to send request[rc=%d, err=%s]\n", rc, error->message);
+		return FALSE;
+	}
+#endif
+	return TRUE;
+}
+#endif
+
 static char *__get_interface(int status_type)
 {
 	char *ifc = NULL;
@@ -118,10 +254,6 @@ static char *__get_interface(int status_type)
 			ifc = COMM_STATUS_BROADCAST_DBUS_GET_SIZE_INTERFACE;
 			break;
 
-		case COMM_STATUS_BROADCAST_GET_JUNK_INFO:
-			ifc = COMM_STATUS_BROADCAST_DBUS_GET_JUNK_INFO_INTERFACE;
-			break;
-
 		default:
 			break;
 	}
@@ -140,28 +272,66 @@ void _on_signal_handle_filter(GDBusConnection *conn,
 		GVariant *parameters,
 		gpointer user_data)
 {
+	char temp_name[MAX_ZONE_NAME_LEN] = {0, };
+	char *zone = NULL;
+	char *sender_zone = NULL;
+	int pid = getpid();
+
+	if(!signal_name){
+		dbg("signal_name is empty");
+		goto catch;
+	}
+
+	if (get_zone_name(pid, temp_name, MAX_ZONE_NAME_LEN) == -1) {
+		gethostname(temp_name, sizeof(temp_name));
+	}
+	if (strlen(temp_name)) {
+		zone = strdup(temp_name);
+	}
+
+	if (unmatched_zone_filter(zone, signal_name)) {
+		dbg("zone name did not match. Drop the message");
+		goto catch;
+	}
+
 	if (interface_name && strcmp(interface_name, COMM_STATUS_BROADCAST_DBUS_INTERFACE) &&
 		strcmp(interface_name, COMM_STATUS_BROADCAST_DBUS_INSTALL_INTERFACE) &&
 		strcmp(interface_name, COMM_STATUS_BROADCAST_DBUS_UNINSTALL_INTERFACE) &&
 		strcmp(interface_name, COMM_STATUS_BROADCAST_DBUS_UPGRADE_INTERFACE) &&
 		strcmp(interface_name, COMM_STATUS_BROADCAST_DBUS_MOVE_INTERFACE) &&
 		strcmp(interface_name, COMM_STATUS_BROADCAST_DBUS_GET_SIZE_INTERFACE) &&
-		strcmp(interface_name, COMM_STATUS_BROADCAST_DBUS_GET_JUNK_INFO_INTERFACE) &&
 		strcmp(interface_name, COMM_STATUS_BROADCAST_DBUS_INSTALL_PROGRESS_INTERFACE)) {
 		dbg("Interface name did not match. Drop the message");
-		return;
+		goto catch;
 	}
-	if (signal_name && strcmp(signal_name, COMM_STATUS_BROADCAST_SIGNAL_STATUS) &&
-		strcmp(signal_name, COMM_STATUS_BROADCAST_EVENT_INSTALL) &&
-		strcmp(signal_name, COMM_STATUS_BROADCAST_EVENT_UNINSTALL) &&
-		strcmp(signal_name, COMM_STATUS_BROADCAST_EVENT_UPGRADE) &&
-		strcmp(signal_name, COMM_STATUS_BROADCAST_EVENT_MOVE) &&
-		strcmp(signal_name, COMM_STATUS_BROADCAST_EVENT_GET_SIZE) &&
-		strcmp(signal_name, COMM_STATUS_BROADCAST_EVENT_GET_JUNK_INFO) &&
-		strcmp(signal_name, COMM_STATUS_BROADCAST_EVENT_INSTALL_PROGRESS)) {
+
+	if (signal_name && strncmp(signal_name, COMM_STATUS_BROADCAST_SIGNAL_STATUS,
+						 LEN_COMM_STATUS_BROADCAST_SIGNAL_STATUS) &&
+		strncmp(signal_name, COMM_STATUS_BROADCAST_EVENT_INSTALL,
+						 LEN_COMM_STATUS_BROADCAST_EVENT_INSTALL) &&
+		strncmp(signal_name, COMM_STATUS_BROADCAST_EVENT_UNINSTALL,
+						 LEN_COMM_STATUS_BROADCAST_EVENT_UNINSTALL) &&
+		strncmp(signal_name, COMM_STATUS_BROADCAST_EVENT_UPGRADE,
+						 LEN_COMM_STATUS_BROADCAST_EVENT_UPGRADE) &&
+		strncmp(signal_name, COMM_STATUS_BROADCAST_EVENT_MOVE,
+						 LEN_COMM_STATUS_BROADCAST_EVENT_MOVE) &&
+		strncmp(signal_name, COMM_STATUS_BROADCAST_EVENT_GET_SIZE,
+						 LEN_COMM_STATUS_BROADCAST_EVENT_GET_SIZE) &&
+		strncmp(signal_name, COMM_STATUS_BROADCAST_EVENT_INSTALL_PROGRESS,
+						 LEN_COMM_STATUS_BROADCAST_EVENT_INSTALL_PROGRESS)) {
 		dbg("Signal name did not match. Drop the message");
-		return;
+
+		goto catch;
 	}
+
+	memset(temp_name, 0, MAX_ZONE_NAME_LEN);
+
+	if (get_sender_zone_name(zone, signal_name, temp_name) == 0) {
+		if (strlen(temp_name)) {
+			sender_zone = strdup(temp_name);
+		}
+	}
+
 	/* Values to be received by signal */
 	char *req_id = NULL;
 	char *pkg_type = NULL;
@@ -174,21 +344,29 @@ void _on_signal_handle_filter(GDBusConnection *conn,
 	if (user_data)
 		sig_cb_data = (struct signal_callback_data *)user_data;
 	else
-		return;
+		goto catch;
 
-	g_variant_get(parameters, "(&s&s&s&s&s)",
-				&req_id, &pkg_type, &pkgid, &key, &val);
+	g_variant_get(parameters, "(&s&s&s&s&s)", &req_id, &pkg_type, &pkgid, &key, &val);
+
 	/* Got signal! */
-	SECURE_LOGD("Got signal: [%s] %s / %s / %s / %s / %s", signal_name, req_id,
-	    pkg_type, pkgid, key, val);
+	SECURE_LOGD("signal_name=[%s], req_id=[%s], pkg_type=[%s], pkgid=[%s], key=[%s], value=[%s]",
+				signal_name, req_id, pkg_type, pkgid, key, val);
 
 	/* Run signal callback if exist */
 	if (sig_cb_data && sig_cb_data->cb) {
-		sig_cb_data->cb(sig_cb_data->cb_data, req_id,
-				pkg_type, pkgid, key, val);
-		dbg("callback function is end");
+		// invoke callback
+		sig_cb_data->cb(sig_cb_data->cb_data, req_id, pkg_type, pkgid, key, val, sender_zone);
+	} else {
+		ERR("signal callback is NOT invoked!!");
 	}
-	dbg("Handled signal. Exit function");
+
+catch:
+	if (zone)
+		free(zone);
+
+	if (sender_zone)
+		free(sender_zone);
+
 	return;
 }
 
@@ -242,6 +420,52 @@ comm_client *comm_client_new(void)
  ERROR_CLEANUP:
 	if (cc)
 		free(cc);
+	return NULL;
+}
+
+/**
+ * Create a new comm_client object (for private connection)
+ */
+comm_client *comm_client_new_private(void)
+{
+	GError *error = NULL;
+	comm_client *cc = NULL;
+	gchar *addr = NULL;
+
+	/* Allocate memory for ADT:comm_client */
+	g_type_init();
+	cc = calloc(1, sizeof(comm_client));
+	if (NULL == cc) {
+		ERR("No memory");
+		return NULL;
+	}
+
+	/* Connect to gdbus. Gets private BUS */
+	addr = g_dbus_address_get_for_bus_sync(G_BUS_TYPE_SYSTEM, NULL, &error);
+	if (error) {
+		ERR("gdbus connection error (%s)", error->message);
+
+		g_error_free(error);
+		goto ERROR_CLEANUP;
+	}
+
+	cc->conn = g_dbus_connection_new_for_address_sync(addr, G_DBUS_CONNECTION_FLAGS_AUTHENTICATION_CLIENT | G_DBUS_CONNECTION_FLAGS_MESSAGE_BUS_CONNECTION, NULL, NULL, &error);
+	if (NULL == cc->conn) {
+		ERR("gdbus connection is not set, even gdbus error isn't raised");
+		g_error_free(error);
+		free(addr);
+
+		goto ERROR_CLEANUP;
+	}
+
+	free(addr);
+
+	return cc;
+
+ ERROR_CLEANUP:
+	if (cc)
+		free(cc);
+
 	return NULL;
 }
 
@@ -345,6 +569,81 @@ comm_client_request(
 
 	return ret;
 }
+
+#ifdef _APPFW_FEATURE_EXPANSION_PKG_INSTALL
+/**
+ * Request a message
+ */
+int
+comm_client_request_with_tep(
+		comm_client *cc,
+		const char *req_id,
+		const int req_type,
+		const char *pkg_type,
+		const char *pkgid,
+		const char *tep_path,
+		const char *args,
+		const char *cookie,
+		int is_block)
+{
+	GError *error = NULL;
+	int ret = 0;
+	int rc = 0;
+	int retry_cnt = 0;
+
+	ERR("sending the tep_install request to pkgmgr-server");
+
+	OrgTizenPkgmgr *proxy;
+	if (!cc){
+		ERR("Invalid gdbus input");
+		return COMM_RET_ERROR;
+	}
+	proxy = org_tizen_pkgmgr_proxy_new_sync(cc->conn,
+			G_DBUS_PROXY_FLAGS_NONE, COMM_PKG_MGR_DBUS_SERVICE,
+			COMM_PKG_MGR_DBUS_PATH,
+			NULL, &error);
+	if (proxy == NULL) {
+		ERR("Unable to create proxy[rc=%d, err=%s]\n", rc, error->message);
+		return COMM_RET_ERROR;
+	}
+
+	/* Assign default values if NULL (NULL is not allowed) */
+	if (req_id == NULL)
+		req_id = "tmp_reqid";
+	if (pkg_type == NULL)
+		pkg_type = "none";
+	if (pkgid == NULL)
+		pkgid = "";
+	if (args == NULL)
+		args = "";
+	if (cookie == NULL)
+		cookie = "";
+	if (tep_path == NULL)
+		tep_path = "";
+
+	rc = org_tizen_pkgmgr_call_tep_request_sync(proxy,
+			req_id, req_type, pkg_type, pkgid, tep_path, args, cookie, &ret, NULL, &error);
+
+	while (rc == FALSE) {
+		ERR("Failed to send request, sleep and retry[rc=%d, err=%s]\n", rc, error->message);
+		sleep(1);
+
+		if(retry_cnt == COMM_CLIENT_RETRY_MAX) {
+			ERR("retry_cnt is max, stop retry\n");
+			return COMM_RET_ERROR;
+		}
+		retry_cnt++;
+
+		rc = __retry_request_with_tep(cc, req_id, req_type, pkg_type, pkgid, tep_path, args, cookie, &ret);
+		if(rc == TRUE) {
+			ERR("__retry_request is success[retry_cnt=%d]\n", retry_cnt);
+			break;
+		}
+	}
+	return ret;
+}
+#endif
+
 
 /**
  * Set a callback for status signal

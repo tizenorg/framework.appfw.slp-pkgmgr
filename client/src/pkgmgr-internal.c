@@ -37,6 +37,7 @@
 #include <dlfcn.h>
 #include <sys/time.h>
 #include <pkgmgr-info.h>
+#include <vasum.h>
 
 #include "package-manager.h"
 #include "package-manager-debug.h"
@@ -55,6 +56,8 @@
 #define IS_WHITESPACE(CHAR) \
 	((CHAR == ' ' || CHAR == '\t' || CHAR == '\r' || CHAR == '\n') ? \
 	true : false)
+
+#define ZONE_HOST "host"
 
 void _app_str_trim(char *input)
 {
@@ -75,23 +78,19 @@ void _app_str_trim(char *input)
 	return;
 }
 
-char *_get_backend_path(const char *input_path)
+API char *_get_backend_path(const char *pkgid)
 {
 	FILE *fp = NULL;
 	char buffer[1024] = { '\0', };
-	char *type = NULL;
 	char installer_path[PKG_STRING_LEN_MAX] = { '\0', };
-	char pkg_path[PKG_STRING_LEN_MAX] = { '\0', };
 	char backend_path[PKG_STRING_LEN_MAX] = { '\0', };
+	char *backend_installer = NULL;
+	char *tmp = NULL;
 
-	if (strrchr(input_path, '/')) {
-		strncpy(pkg_path, strrchr(input_path, '/') + 1,
-			PKG_STRING_LEN_MAX - 1);
-	} else {
-		strncpy(pkg_path, input_path, PKG_STRING_LEN_MAX - 1);
-	}
+	int ret;
+	pkgmgrinfo_pkginfo_h handle = NULL;
 
-	_LOGD("pkg_path[%s]\n", pkg_path);
+	_LOGD("pkgid[%s]\n", pkgid);
 
 	fp = fopen(PKG_CONF_PATH, "r");
 	if (fp == NULL) {
@@ -120,27 +119,51 @@ char *_get_backend_path(const char *input_path)
 	if (fp != NULL)
 		fclose(fp);
 
-	if (path == NULL)
+	if(path == NULL)
 		return NULL;
 
-/*	if(path[strlen(path)] == '/') */
+	ret = pkgmgrinfo_pkginfo_get_pkginfo(pkgid, &handle);
+	if (ret != PMINFO_R_OK) {
+		_LOGE("pkgid is wrong");
+	} else {
+		ret = pkgmgrinfo_pkginfo_get_backend_installer(handle, &tmp);
+		if (ret) {
+			_LOGE(" pkgmgrinfo_pkginfo_get_backend_installer error : %d", ret);
+			backend_installer = NULL;
+			tmp = NULL;
+		}else {
+			backend_installer = strdup(tmp);
+		}
+	}
+	pkgmgrinfo_pkginfo_destroy_pkginfo(handle);
+	tmp = NULL;
+
+	if (!backend_installer) {
+		backend_installer = _get_backend_from_zip(pkgid);
+		if (!backend_installer) {
+			_LOGE("Fail to get backend from zip : %s ",pkgid);
+			char *ext = NULL;
+			ext = strrchr(pkgid, '.');
+			if (ext == NULL)
+				backend_installer = strdup(pkgid);
+			else
+				backend_installer = strdup(++ext);
+		}
+	}
+
+	/*	if(path[strlen(path)] == '/') */
 	snprintf(backend_path, PKG_STRING_LEN_MAX - 1, "%s", path);
 /*	else
-		sprintf(backend_path, "%s/", path); */
-
-	type = strrchr(pkg_path, '.');
-	if (type == NULL)
-		type = pkg_path;
-	else
-		type++;
-
-	snprintf(installer_path, PKG_STRING_LEN_MAX - 1, 
-					"%s%s", backend_path, type);
-
+       sprintf(backend_path, "%s/", path); */
+	snprintf(installer_path, PKG_STRING_LEN_MAX - 1, "%s%s", backend_path, backend_installer);
 	_LOGD("installer_path[%s]\n", installer_path);
 
-	if (access(installer_path, F_OK) != 0)
+	if (backend_installer)
+		free(backend_installer);
+
+	if (access(installer_path, F_OK) != 0) {
 		return NULL;
+	}
 
 	return strdup(installer_path);
 }
@@ -151,8 +174,6 @@ char *_get_backend_path_with_type(const char *type)
 	char buffer[1024] = { '\0', };
 	char installer_path[PKG_STRING_LEN_MAX] = { '\0', };
 	char backend_path[PKG_STRING_LEN_MAX] = { '\0', };
-
-	_LOGD("type[%s]\n", type);
 
 	fp = fopen(PKG_CONF_PATH, "r");
 	if (fp == NULL) {
@@ -167,11 +188,7 @@ char *_get_backend_path_with_type(const char *type)
 		_app_str_trim(buffer);
 
 		if ((path = strstr(buffer, PKG_BACKEND)) != NULL) {
-//			_LOGD("[%s]\n", buffer);
-//			_LOGD("[%s]\n", path);
 			path = path + strlen(PKG_BACKEND);
-//			_LOGD("[%s]\n", path);
-
 			break;
 		}
 
@@ -206,7 +223,7 @@ char *_get_backend_path_with_type(const char *type)
 		}
 		type = strchr(extlist, '.') + 1;
 
-		snprintf(installer_path, PKG_STRING_LEN_MAX - 1, 
+		snprintf(installer_path, PKG_STRING_LEN_MAX - 1,
 						"%s%s", backend_path, type);
 	}
 
@@ -355,7 +372,7 @@ pkg_plugin_set *_pkg_plugin_load_library(const char *pkg_type,
 		return NULL;
 	}
 
-	if ((on_load = dlsym(library_handle, "pkg_plugin_on_load")) == NULL || 
+	if ((on_load = dlsym(library_handle, "pkg_plugin_on_load")) == NULL ||
 	    dlerror() != NULL) {
 		_LOGE("can not find symbol \n");
 		dlclose(library_handle);
@@ -486,7 +503,7 @@ typedef struct _detail_info_map_t {
 		char version[PKG_VERSION_STRING_LEN_MAX];
 		char pkg_description[PKG_VALUE_STRING_LEN_MAX];
 		char min_platform_version[PKG_VERSION_STRING_LEN_MAX];
-		time_t installed_time;	
+		time_t installed_time;
 		int installed_size;
 		int app_size;
 		int data_size;
@@ -524,7 +541,7 @@ char *_get_info_string(const char *key,
 
 	memcpy(&tmp_pkg_detail_info, pkg_detail_info,
 	       sizeof(package_manager_pkg_detail_info_t));
-	
+
 	for (i = 0; i < sizeof(info_map) / sizeof(detail_info_map_t); i++) {
 		tmp = &info_map[i];
 		if (strcmp(key, tmp->name) == 0) {
@@ -532,17 +549,17 @@ char *_get_info_string(const char *key,
 				return strdup((char *)(tmp->field));
 			} else if (strcmp(tmp->type, "bool") == 0) {
 				char temp[PKG_VALUE_STRING_LEN_MAX];
-				snprintf(temp, PKG_VALUE_STRING_LEN_MAX - 1, 
+				snprintf(temp, PKG_VALUE_STRING_LEN_MAX - 1,
 					"%d", (int)*(bool *) (tmp->field));
 				return strdup(temp);
 			} else if (strcmp(tmp->type, "int") == 0) {
 				char temp[PKG_VALUE_STRING_LEN_MAX];
-				snprintf(temp, PKG_VALUE_STRING_LEN_MAX - 1, 
+				snprintf(temp, PKG_VALUE_STRING_LEN_MAX - 1,
 					"%d", (int)*(int *)(tmp->field));
 				return strdup(temp);
 			} else if (strcmp(tmp->type, "time_t") == 0) {
 				char temp[PKG_VALUE_STRING_LEN_MAX];
-				snprintf(temp, PKG_VALUE_STRING_LEN_MAX - 1, 
+				snprintf(temp, PKG_VALUE_STRING_LEN_MAX - 1,
 					"%d", (int)*(time_t *) (tmp->field));
 				return strdup(temp);
 			} else
@@ -624,11 +641,279 @@ static int __is_rpm_pkg(const char *filename)
 	}
 }
 
-API char *_get_type_from_zip(const char *filename)
+API int _zone_get_name_by_pid(int pid, char *zone_name, int len)
+{
+	vsm_zone_h zone;
+	vsm_context_h ctx = vsm_create_context();
+	const char *zone_name_tmp = NULL;
+	int ret = 0;
+	if (ctx == NULL) {
+			_LOGE("vsm_create_context failed");
+			return false;
+	}
+	zone = vsm_lookup_zone_by_pid(ctx, pid);
+
+	if (zone != NULL && !vsm_is_host_zone(zone)) {
+		zone_name_tmp = vsm_get_zone_name(zone);
+		if (zone_name_tmp == NULL) {
+			_LOGE("failed to get zone");
+			ret = -1;
+			goto err;
+		}
+	} else if (vsm_is_host_zone(zone)) {
+		zone_name_tmp = ZONE_HOST;
+	} else {
+		_LOGE("could not get zone name");
+		ret = -1;
+		goto err;
+	}
+
+	snprintf(zone_name, len, "%s", zone_name_tmp);
+err:
+	if (vsm_cleanup_context(ctx) != 0)
+		_LOGE("vsm cleanup failed");
+	return ret;
+}
+
+API char *_zone_get_root_path(const char *zone)
+{
+	vsm_context_h context = NULL;
+	vsm_zone_h handle = NULL;
+	char *rootpath = NULL;
+
+	context = vsm_create_context();
+	if (context == NULL) {
+		_LOGE("Failed to create vsm context");
+		return NULL;
+	}
+
+	handle = vsm_lookup_zone_by_name(context, zone);
+	if (handle == NULL) {
+		_LOGE("Failed to lookup zone by name");
+		return NULL;
+	}
+
+	rootpath = vsm_get_zone_rootpath(handle);
+	if (rootpath == NULL) {
+		_LOGE("Failed to get rootpath");
+		return NULL;
+	}
+
+	_LOGD("rootpath : %s", rootpath);
+
+	return rootpath;
+}
+
+#ifdef _APPFW_FEATURE_EXPANSION_PKG_INSTALL
+/**
+* @brief __get_installed_pkg_type() returns the installed package type for which input tep file should belong to.
+*
+* @param filename - tep file name
+*
+* @return returns NULL if pkgid for which tep belongs doesn't exists. Else, returns pkgtype.
+*/
+static char * __get_installed_pkg_type(const char *filename)
+{
+	char *pkg_type = NULL;
+	char pkg_file[PKG_STRING_LEN_MAX] = { '\0', };
+	char *tmp = NULL;
+	char *pkgid = NULL;
+	size_t pkgid_len = 0;
+	int ret = 0;
+	char *type = NULL;
+	char *install_path = NULL;
+	char manifest_path[FILENAME_MAX] = {0,};
+
+	if (strrchr(filename, '/')) {
+		strncpy(pkg_file, strrchr(filename, '/') + 1, PKG_STRING_LEN_MAX - 1);
+	} else {
+		strncpy(pkg_file, filename, PKG_STRING_LEN_MAX - 1);
+	}
+
+	/*Checking for valid tep file*/
+	pkg_type = strrchr(pkg_file, '.');
+	retvm_if(pkg_type == NULL, NULL, "pkg_type is null[%s]", filename);
+
+	pkg_type++;
+	retvm_if((pkg_type == NULL || strcmp(pkg_type, "tep") != 0), NULL, "Invalid tep file[%s]", filename);
+
+	pkg_type = NULL;
+
+	/*e.g., Input filename --> org.tizen.sample-1.0.0-arm.tep
+	    e.g., Output should be --> org.tizen.sample*/
+	tmp = strchr(pkg_file, '-');
+	retvm_if((tmp == NULL || strlen(tmp) == 0), NULL, "Invalid tep file name!!!\n");
+
+	pkgid_len = tmp - pkg_file;
+	retvm_if(pkgid_len < 1, NULL, "Invalid tep file name!!!\n");
+
+	pkgid = calloc(1, pkgid_len + 1);
+	retvm_if(pkgid == NULL, NULL, "Out of Memory!!!\n");
+
+	memcpy((void *)pkgid, (const void *)pkg_file, pkgid_len);
+	trym_if((strlen(pkgid) == 0), "pkgid is NULL");
+
+	pkgmgrinfo_pkginfo_h handle = NULL;
+	ret = pkgmgrinfo_pkginfo_get_pkginfo(pkgid, &handle);
+	trym_if(ret < 0, "pkgmgrinfo_pkginfo_get_pkginfo(%s) failed.", pkgid);
+
+	ret = pkgmgrinfo_pkginfo_get_type(handle, &type);
+	trym_if(ret < 0 || type == NULL, "pkgmgrinfo_pkginfo_get_type(%s) failed.", pkgid);
+
+	ret = pkgmgrinfo_pkginfo_get_root_path(handle, &install_path);
+	trym_if(ret < 0, "Cannot install .tep [Corresponding app is not installed], pkgmgrinfo_pkginfo_get_root_path(%s) failed.", pkgid);
+
+	if ((strcmp(type, "wgt")==0) || (strcmp(type, "rpm") == 0)){
+		pkg_type = strdup(type);
+	}else if (strcmp(type, "tpk") == 0){
+		snprintf(manifest_path, FILENAME_MAX, "%s/%s", install_path, CORE_XML_FILE);
+		if (access(manifest_path, F_OK) == 0){
+			pkg_type = strdup("rpm");
+		}else{
+			pkg_type = strdup("tpk");
+		}
+	}
+
+catch:
+	free(pkgid);
+	pkgid = NULL;
+	if(handle)
+		pkgmgrinfo_pkginfo_destroy_pkginfo(handle);
+	return pkg_type;
+
+}
+#endif
+
+API char *_zone_get_type_from_zip(const char *filename, const char *zone)
 {
 	retvm_if(filename == NULL, NULL, "filename is NULL");
 
 	char *pkg_type = NULL;
+	unzFile uf = NULL;
+
+	char *_file_name = NULL;
+	int _name_len = 0;
+
+#ifdef _APPFW_FEATURE_EXPANSION_PKG_INSTALL
+		_LOGE("tep_filepath [%s]", filename);
+#endif
+
+	if (zone && strcmp(zone, ZONE_HOST) != 0) {
+		char *rootpath = NULL;
+		rootpath = _zone_get_root_path(zone);
+		retvm_if(rootpath == NULL, NULL, "rootpath is NULL");
+
+		_name_len = strlen(filename) + strlen(rootpath) + 1; /* for '\0' */
+		_file_name = calloc(1, _name_len);
+		if (_file_name) {
+			snprintf(_file_name, _name_len, "%s%s", rootpath, filename);
+			_LOGD("new file name is %s", _file_name);
+
+			if (access(_file_name, F_OK) != 0) {
+				_LOGE("can not access to [%s], retry to [%s]", _file_name, filename);
+				free(_file_name);
+				_file_name = NULL;
+				_name_len = strlen(filename) + 1; /* for '\0' */
+				_file_name = calloc(1, _name_len);
+				if (_file_name) {
+					snprintf(_file_name, _name_len, "%s", filename);
+					if (access(_file_name, F_OK) != 0) {
+						_LOGE("can not access to [%s]", _file_name);
+						free(_file_name);
+						return NULL;
+					}
+				}
+			}
+		}
+	} else {
+		_name_len = strlen(filename) + 1; /* for '\0' */
+		_file_name = calloc(1, _name_len);
+		if (_file_name) {
+			snprintf(_file_name, _name_len, "%s", filename);
+			if (access(_file_name, F_OK) != 0) {
+				_LOGE("can not access to [%s]", _file_name);
+				free(_file_name);
+				return NULL;
+			}
+		}
+	}
+
+	if (!_file_name) {
+		_LOGE("_file_name alloc failed");
+		return NULL;
+	}
+
+	// rpm
+	if (__is_rpm_pkg(_file_name) == 0) {
+		_LOGE("%s is rpm", _file_name);
+		free(_file_name);
+		return strdup("rpm");
+	}
+
+	uf = unzOpen(_file_name);
+	retvm_if(uf == NULL, NULL, "unzOpen[%s] fail", _file_name);
+
+
+	//hybrid for web-core
+	if ((unzLocateFile(uf, HYBRID_XML_FILE, 0) == 0) && (unzLocateFile(uf, CORE_XML_FILE, 0) == 0)) {
+		_LOGE("%s is hybrid[web-core]", _file_name);
+		pkg_type = strdup("wgt");
+
+	//hybrid for web-tpk
+	} else if ((unzLocateFile(uf, HYBRID_XML_FILE, 0) == 0) && (unzLocateFile(uf, TPK_XML_FILE, 0) == 0)) {
+		_LOGE("%s is hybrid[web-tpk]", _file_name);
+		pkg_type = strdup("wgt");
+
+	//core
+	} else if (unzLocateFile(uf, CORE_XML_FILE, 0) == 0) {
+		_LOGD("%s is core", filename);
+		pkg_type = strdup("tpk");
+
+	//wgt
+	} else if (unzLocateFile(uf, WGT_XML_FILE, 0) == 0) {
+		_LOGE("%s is wgt", _file_name);
+		pkg_type = strdup("wgt");
+
+	//tpk
+	} else if (unzLocateFile(uf, TPK_XML_FILE, 0) == 0) {
+		_LOGE("%s is tpk", _file_name);
+		pkg_type = strdup("tpk");
+
+	//error case
+	} else {
+#ifdef _APPFW_FEATURE_EXPANSION_PKG_INSTALL
+		pkg_type = __get_installed_pkg_type(_file_name);
+
+		if (pkg_type != NULL){
+			_LOGE("tep pkg type is %s\n", pkg_type);
+		} else{
+			_LOGE("Invalid tep file name!!");
+		}
+#else
+		_LOGE("%s is not supported", _file_name);
+#endif
+
+	}
+
+	if (uf) {
+		unzCloseCurrentFile(uf);
+		unzClose(uf);
+	}
+
+	free(_file_name);
+
+	return pkg_type;
+}
+
+API char *_get_type_from_zip(const char *filename)
+{
+	return _zone_get_type_from_zip(filename, NULL);
+}
+API char *_get_backend_from_zip(const char *filename)
+{
+	retvm_if(filename == NULL, NULL, "filename is NULL");
+
+	char *backend = NULL;
 	unzFile uf = NULL;
 
 	if (access(filename, F_OK) != 0) {
@@ -649,31 +934,42 @@ API char *_get_type_from_zip(const char *filename)
 	//hybrid for web-core
 	if ((unzLocateFile(uf, HYBRID_XML_FILE, 0) == 0) && (unzLocateFile(uf, CORE_XML_FILE, 0) == 0)) {
 		_LOGD("%s is hybrid[web-core]", filename);
-		pkg_type = strdup("wgt");
+		backend = strdup("wgt");
 
 	//hybrid for web-tpk
 	} else if ((unzLocateFile(uf, HYBRID_XML_FILE, 0) == 0) && (unzLocateFile(uf, TPK_XML_FILE, 0) == 0)) {
 		_LOGD("%s is hybrid[web-tpk]", filename);
-		pkg_type = strdup("wgt");
+		backend = strdup("wgt");
 
 	//core
 	} else if (unzLocateFile(uf, CORE_XML_FILE, 0) == 0) {
 		_LOGD("%s is core", filename);
-		pkg_type = strdup("coretpk");
+		backend = strdup("coretpk");
 
 	//wgt
 	} else if (unzLocateFile(uf, WGT_XML_FILE, 0) == 0) {
 		_LOGD("%s is wgt", filename);
-		pkg_type = strdup("wgt");
+		backend = strdup("wgt");
 
 	//tpk
 	} else if (unzLocateFile(uf, TPK_XML_FILE, 0) == 0) {
 		_LOGD("%s is tpk", filename);
-		pkg_type = strdup("tpk");
+		backend = strdup("tpk");
 
 	//error case
 	} else {
+
+#ifdef _APPFW_FEATURE_EXPANSION_PKG_INSTALL
+		backend = __get_installed_pkg_type(filename);
+
+		if (backend != NULL){
+			LOGE("tep pkg type is %s\n", backend);
+		} else{
+			LOGE("Invalid tep file name!!");
+		}
+#else
 		_LOGD("%s is not supported", filename);
+#endif
 	}
 
 	if (uf) {
@@ -681,5 +977,5 @@ API char *_get_type_from_zip(const char *filename)
 		unzClose(uf);
 	}
 
-	return pkg_type;
+	return backend;
 }

@@ -27,8 +27,11 @@
 #include "pkgmgr_installer.h"
 #include "pkgmgr_installer_config.h"
 
+#ifdef _APPFW_FEATURE_EXPANSION_PKG_INSTALL
+#include "package-manager-debug.h"
+#endif
+
 #include "comm_config.h"
-#include "comm_socket.h"
 #include "comm_status_broadcast_server.h"
 #include "error_report.h"
 
@@ -55,14 +58,28 @@ struct pkgmgr_installer {
 	int request_type;
 	int move_type;
 	char *pkgmgr_info;
+#ifdef _APPFW_FEATURE_EXPANSION_PKG_INSTALL
+		char *tep_path;
+		int tep_move;
+#endif
 	char *session_id;
 	char *license_path;
 	char *quiet_socket_path;
 	char *optional_data;
 	char *caller_pkgid;
+#ifdef _APPFW_FEATURE_EXPANSION_PKG_INSTALL
+		int is_tep_included;
+#endif
+	bool debug_mode;
+	char *pkg_chksum;
 
 	DBusConnection *conn;
 };
+
+#ifdef _APPFW_FEATURE_EXPANSION_PKG_INSTALL
+#define TEP_MOVE "tep_move"
+#define TEP_COPY "tep_copy"
+#endif
 
 /* API */
 
@@ -92,6 +109,8 @@ API int __send_event(pkgmgr_installer *pi,
 {
 	int r = -1;
 
+	_LOGD("option is pkgid[%s] key[%s] value[%s]", pkgid, key, val );
+
 	if (strcmp(key,PKGMGR_INSTALLER_START_KEY_STR) == 0) {
 		if(strcmp(val,PKGMGR_INSTALLER_UPGRADE_EVENT_STR) == 0) {
 			pi->request_type = PKGMGR_REQ_UPGRADE;
@@ -101,14 +120,26 @@ API int __send_event(pkgmgr_installer *pi,
 			r = __send_signal_for_event(COMM_STATUS_BROADCAST_INSTALL, pi, pkg_type, pkgid, key, val);
 		} else if (pi->request_type == PKGMGR_REQ_UNINSTALL){
 			r = __send_signal_for_event(COMM_STATUS_BROADCAST_UNINSTALL, pi, pkg_type, pkgid, key, val);
+#ifdef _APPFW_FEATURE_MOUNT_INSTALL
+		} else if (pi->request_type == PKGMGR_REQ_MOUNT_INSTALL){
+			r = __send_signal_for_event(COMM_STATUS_BROADCAST_INSTALL, pi, pkg_type, pkgid, key, val);
+#endif
+		} else if (pi->request_type == PKGMGR_REQ_MOVE){
+			r = __send_signal_for_event(COMM_STATUS_BROADCAST_MOVE, pi, pkg_type, pkgid, key, val);
 		}
 	} else if (strcmp(key,PKGMGR_INSTALLER_END_KEY_STR) == 0) {
 		if(pi->request_type == PKGMGR_REQ_INSTALL) {
 			r = __send_signal_for_event(COMM_STATUS_BROADCAST_INSTALL, pi, pkg_type, pkgid, key, val);
 		} else if (pi->request_type == PKGMGR_REQ_UNINSTALL){
 			r = __send_signal_for_event(COMM_STATUS_BROADCAST_UNINSTALL, pi, pkg_type, pkgid, key, val);
+		} else if (pi->request_type == PKGMGR_REQ_MOVE){
+			r = __send_signal_for_event(COMM_STATUS_BROADCAST_MOVE, pi, pkg_type, pkgid, key, val);
 		} else if (pi->request_type == PKGMGR_REQ_UPGRADE){
 			r = __send_signal_for_event(COMM_STATUS_BROADCAST_UPGRADE, pi, pkg_type, pkgid, key, val);
+#ifdef _APPFW_FEATURE_MOUNT_INSTALL
+		} else if (pi->request_type == PKGMGR_REQ_MOUNT_INSTALL){
+			r = __send_signal_for_event(COMM_STATUS_BROADCAST_INSTALL, pi, pkg_type, pkgid, key, val);
+#endif
 		}
 	} else if (strcmp(key,PKGMGR_INSTALLER_INSTALL_PERCENT_KEY_STR) == 0) {
 		r = __send_signal_for_event(COMM_STATUS_BROADCAST_INSTALL_PROGRESS, pi, pkg_type, pkgid, key, val);
@@ -125,6 +156,7 @@ API pkgmgr_installer *pkgmgr_installer_new(void)
 		return ERR_PTR(-ENOMEM);
 
 	pi->request_type = PKGMGR_REQ_INVALID;
+	pi->pkg_chksum = NULL;
 
 	return pi;
 }
@@ -142,6 +174,14 @@ API int pkgmgr_installer_free(pkgmgr_installer *pi)
 		free(pi->optional_data);
 	if (pi->caller_pkgid)
 		free(pi->caller_pkgid);
+	if(pi->license_path)
+		free(pi->license_path);
+	if(pi->quiet_socket_path)
+		free(pi->quiet_socket_path);
+#ifdef _APPFW_FEATURE_EXPANSION_PKG_INSTALL
+	if(pi->tep_path)
+		free(pi->tep_path);
+#endif
 
 	if (pi->conn)
 		comm_status_broadcast_server_disconnect(pi->conn);
@@ -183,6 +223,9 @@ pkgmgr_installer_receive_request(pkgmgr_installer *pi,
 			break;
 
 		case 'i':	/* install */
+#ifdef _APPFW_FEATURE_EXPANSION_PKG_INSTALL
+			_LOGE("option is [i]" );
+#endif
 			if (mode) {
 				r = -EINVAL;
 				goto RET;
@@ -192,8 +235,42 @@ pkgmgr_installer_receive_request(pkgmgr_installer *pi,
 			if (pi->pkgmgr_info)
 				free(pi->pkgmgr_info);
 			pi->pkgmgr_info = strndup(optarg, MAX_STRLEN);
+#ifdef _APPFW_FEATURE_EXPANSION_PKG_INSTALL
+			_LOGD("option is [i] pkgid[%s]", pi->pkgmgr_info );
+			if (pi->pkgmgr_info && strlen(pi->pkgmgr_info)==0){
+				free(pi->pkgmgr_info);
+			}else{
+				mode = 'i';
+			}
 			break;
 
+		case 'e':	/* install */
+			_LOGD("option is [e]" );
+			if (!mode)
+				pi->request_type = PKGMGR_REQ_INSTALL_TEP;
+			if (pi->tep_path)
+				free(pi->tep_path);
+			pi->tep_path = strndup(optarg, MAX_STRLEN);
+			pi->is_tep_included = 1;
+			_LOGD("option is [e] tep_path[%s]", pi->tep_path);
+			break;
+
+		case 'M':	/* install */
+			_LOGD("option is [M]" );
+			if (strncmp(optarg, TEP_MOVE, strlen(TEP_MOVE)) == 0)
+				pi->tep_move = 1;
+			else
+				pi->tep_move = 0;
+			_LOGD("option is [e] tep_move[%d]", pi->tep_move);
+#endif
+			break;
+
+#ifdef _APPFW_FEATURE_MOUNT_INSTALL
+		case 'w':	/* mount based install */
+			_LOGD("option is [w]" );
+			pi->request_type = PKGMGR_REQ_MOUNT_INSTALL;
+			break;
+#endif
 		case 'd':	/* uninstall */
 			if (mode) {
 				r = -EINVAL;
@@ -265,10 +342,18 @@ pkgmgr_installer_receive_request(pkgmgr_installer *pi,
 			pi->pkgmgr_info = strndup(optarg, MAX_STRLEN);
 			break;
 
+		case 'G':  /* debug mode for sdk */
+			pi->debug_mode = true;
+			break;
 		case 'o': /* optional data*/
 			if (pi->optional_data)
 				free(pi->optional_data);
 			pi->optional_data = strndup(optarg, MAX_STRLEN);
+			break;
+		case 'C': /* pkgfile checksum for installer app */
+			if (pi->pkg_chksum)
+				free(pi->pkg_chksum);
+			pi->pkg_chksum = strndup(optarg, MAX_STRLEN);
 			break;
 
 			/* Otherwise */
@@ -301,6 +386,20 @@ API const char *pkgmgr_installer_get_request_info(pkgmgr_installer *pi)
 	return pi->pkgmgr_info;
 }
 
+#ifdef _APPFW_FEATURE_EXPANSION_PKG_INSTALL
+API const char *pkgmgr_installer_get_tep_path(pkgmgr_installer *pi)
+{
+	CHK_PI_RET(PKGMGR_REQ_INVALID);
+	return pi->tep_path;
+}
+
+API int pkgmgr_installer_get_tep_move_type(pkgmgr_installer *pi)
+{
+	CHK_PI_RET(PKGMGR_REQ_INVALID);
+	return pi->tep_move;
+}
+#endif
+
 API const char *pkgmgr_installer_get_session_id(pkgmgr_installer *pi)
 {
 	CHK_PI_RET(PKGMGR_REQ_INVALID);
@@ -329,6 +428,12 @@ API int pkgmgr_installer_is_quiet(pkgmgr_installer *pi)
 return 1;
 }
 
+API const char *pkgmgr_installer_get_pkg_chksum(pkgmgr_installer *pi)
+{
+	CHK_PI_RET(PKGMGR_REQ_INVALID);
+	return pi->pkg_chksum;
+}
+
 API int pkgmgr_installer_get_move_type(pkgmgr_installer *pi)
 {
 	CHK_PI_RET(PKGMGR_REQ_INVALID);
@@ -339,6 +444,22 @@ API const char *pkgmgr_installer_get_caller_pkgid(pkgmgr_installer *pi)
 {
 	CHK_PI_RET(PKGMGR_REQ_INVALID);
 	return pi->caller_pkgid;
+}
+API int pkgmgr_installer_is_debug_mode(pkgmgr_installer *pi)
+{
+	CHK_PI_RET(PKGMGR_REQ_INVALID);
+	return pi->debug_mode;
+}
+
+API int pkgmgr_installer_send_app_uninstall_signal(pkgmgr_installer *pi,
+			     const char *pkg_type,
+			     const char *pkgid,
+			     const char *val)
+{
+	int ret = -1;
+
+	ret = __send_signal_for_event(COMM_STATUS_BROADCAST_UNINSTALL, pi, pkg_type, pkgid, "appid", val);
+	return ret;
 }
 
 API int
@@ -351,9 +472,6 @@ pkgmgr_installer_send_signal(pkgmgr_installer *pi,
 
 	if (strcmp(pkg_type,PKGMGR_INSTALLER_GET_SIZE_KEY_STR) == 0) {
 		r = __send_signal_for_event(COMM_STATUS_BROADCAST_GET_SIZE, pi, pkg_type, pkgid, key, val);
-		return r;
-	} else if (strcmp(pkg_type,PKGMGR_INSTALLER_GET_JUNK_INFO_KEY_STR) == 0) {
-		r = __send_signal_for_event(COMM_STATUS_BROADCAST_GET_JUNK_INFO, pi, pkg_type, pkgid, key, val);
 		return r;
 	}
 

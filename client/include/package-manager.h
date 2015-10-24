@@ -88,17 +88,6 @@ extern "C" {
  */
 
 /**
- * @brief pkgmgr info types.
- */
-#define PKGMGR_INFO_STR_PKGTYPE		"pkg_type"
-#define PKGMGR_INFO_STR_PKGNAME		"pkg_name"
-#define PKGMGR_INFO_STR_VERSION		"version"
-#define PKGMGR_INFO_STR_INSTALLED_SIZE	"installed_size"
-#define PKGMGR_INFO_STR_DATA_SIZE	"data_size"
-#define PKGMGR_INFO_STR_APP_SIZE	"app_size"
-#define PKGMGR_INFO_STR_INSTALLED_TIME	"installed_time"
-
-/**
  * @brief listening status type in pkgmgr.
  */
 #define PKGMGR_CLIENT_STATUS_ALL						0x00
@@ -109,7 +98,6 @@ extern "C" {
 #define PKGMGR_CLIENT_STATUS_CLEAR_DATA					0x10
 #define PKGMGR_CLIENT_STATUS_INSTALL_PROGRESS			0x20
 #define PKGMGR_CLIENT_STATUS_GET_SIZE					0x40
-#define PKGMGR_CLIENT_STATUS_GET_JUNK_INFO				0x80
 /** @} */
 
 /* 1 -100 : Package command errors */
@@ -120,6 +108,7 @@ extern "C" {
 #define PKGCMD_ERR_PACKAGE_INVALID						2
 #define PKGCMD_ERR_PACKAGE_LOWER_VERSION				3
 #define PKGCMD_ERR_PACKAGE_EXECUTABLE_NOT_FOUND			4
+#define PKGCMD_ERR_PACKAGE_NOT_SUPPORTED_API_VERSION	5
 #define PKGCMD_ERR_MANIFEST_NOT_FOUND					11
 #define PKGCMD_ERR_MANIFEST_INVALID						12
 #define PKGCMD_ERR_CONFIG_NOT_FOUND						13
@@ -141,10 +130,21 @@ extern "C" {
 #define PKGCMD_ERR_OUT_OF_MEMORY						63
 #define PKGCMD_ERR_ARGUMENT_INVALID						64
 
+#define PKGCMD_ERR_SIGNATURE_INVALID_CERT_CHAIN					71
+#define PKGCMD_ERR_SIGNATURE_INVALID_DISTRIBUTOR_CERT			72
+#define PKGCMD_ERR_SIGNATURE_INVALID_SDK_DEFAULT_AUTHOR_CERT	73
+#define PKGCMD_ERR_SIGNATURE_IN_DISTRIBUTOR_CASE_AUTHOR_CERT	74
+#define PKGCMD_ERR_SIGNATURE_INVALID_DEVICE_UNIQUE_ID			75
+#define PKGCMD_ERR_SIGNATURE_INVALID_CERT_TIME					76
+#define PKGCMD_ERR_SIGNATURE_INVALID_NO_HASH_FILE				77
+#define PKGCMD_ERR_SIGNATURE_NO_DEVICE_PROFILE					78
+#define PKGCMD_ERR_SIGNATURE_INVALID_HASH_SIGNATURE				79
+
 #define PKGCMD_ERR_PACKAGE_NOT_FOUND_STR					"PACKAGE_NOT_FOUND"
 #define PKGCMD_ERR_PACKAGE_INVALID_STR						"PACKAGE_INVALID"
 #define PKGCMD_ERR_PACKAGE_LOWER_VERSION_STR				"PACKAGE_LOWER_VERSION"
 #define PKGCMD_ERR_PACKAGE_EXECUTABLE_NOT_FOUND_STR			"PACKAGE_EXECUTABLE_NOT_FOUND"
+#define PKGCMD_ERR_PACKAGE_NOT_SUPPORTED_API_VERSION_STR	"PACKAGE_NOT_SUPPORTED_API_VERSION"
 #define PKGCMD_ERR_MANIFEST_NOT_FOUND_STR					"MANIFEST_NOT_FOUND"
 #define PKGCMD_ERR_MANIFEST_INVALID_STR						"MANIFEST_INVALID"
 #define PKGCMD_ERR_CONFIG_NOT_FOUND_STR						"CONFIG_NOT_FOUND"
@@ -167,11 +167,21 @@ extern "C" {
 #define PKGCMD_ERR_PRIVILEGE_UNKNOWN_FAILED_STR			"UNKNOWN PRIVILEGE FAILED"
 #define PKGCMD_ERR_PRIVILEGE_USING_LEGACY_FAILED_STR	"PRIVILEGE USING LEGACY FAILED"
 
-#define PKG_SIZE_INFO_FILE "/tmp/pkgmgr_size_info.txt"
-#define PKG_SIZE_INFO_PATH "/tmp"
+#define PKGCMD_ERR_SIGNATURE_INVALID_CERT_CHAIN_STR					"SIGNATURE_INVALID_CERT_CHAIN"
+#define PKGCMD_ERR_SIGNATURE_INVALID_DISTRIBUTOR_CERT_STR			"SIGNATURE_INVALID_DISTRIBUTOR_CERT"
+#define PKGCMD_ERR_SIGNATURE_INVALID_SDK_DEFAULT_AUTHOR_CERT_STR	"SIGNATURE_INVALID_SDK_DEFAULT_AUTHOR_CERT"
+#define PKGCMD_ERR_SIGNATURE_IN_DISTRIBUTOR_CASE_AUTHOR_CERT_STR	"SIGNATURE_IN_DISTRIBUTOR_CASE_AUTHOR_CERT"
+#define PKGCMD_ERR_SIGNATURE_INVALID_DEVICE_UNIQUE_ID_STR			"SIGNATURE_INVALID_DEVICE_UNIQUE_ID"
+#define PKGCMD_ERR_SIGNATURE_INVALID_CERT_TIME_STR					"SIGNATURE_INVALID_CERT_TIME"
+#define PKGCMD_ERR_SIGNATURE_INVALID_NO_HASH_FILE_STR				"SIGNATURE_INVALID_NO_HASH_FILE"
+#define PKGCMD_ERR_SIGNATURE_NO_DEVICE_PROFILE_STR					"SIGNATURE_NO_DEVICE_PROFILE"
+#define PKGCMD_ERR_SIGNATURE_INVALID_HASH_SIGNATURE_STR				"SIGNATURE_INVALID_HASH_SIGNATURE"
 
-#define PKG_SIZE_INFO_TOTAL "__TOTAL__"
-#define PKG_CLEAR_ALL_CACHE "__ALL__"
+#define PKG_SIZE_INFO_FILE 									"/tmp/pkgmgr_size_info.txt"
+#define PKG_SIZE_INFO_PATH 									"/tmp"
+
+#define PKG_SIZE_INFO_TOTAL 								"__TOTAL__"
+#define PKG_CLEAR_ALL_CACHE 								"__ALL__"
 
 /**
  * @brief Return values in pkgmgr.
@@ -224,6 +234,8 @@ typedef struct
 	long long ext_app_size;
 } pkg_size_info_t;
 
+typedef pkg_size_info_t *pkg_size_info_h;
+
 typedef int (*pkgmgr_iter_fn)(const char* pkg_type, const char* pkgid,
 				const char* version, void *data);
 
@@ -246,10 +258,15 @@ typedef void (*pkgmgr_pkg_size_info_receive_cb)(pkgmgr_client *pc, const char *p
 typedef void (*pkgmgr_total_pkg_size_info_receive_cb)(pkgmgr_client *pc,
 		const pkg_size_info_t *size_info, void *user_data);
 
+typedef int (*pkgmgr_handler_with_zone)(int req_id, const char *pkg_type,
+				const char *pkgid, const char *key, const char *val,
+				const void *pmsg, void *data, const char *zone);
+
 typedef enum {
 	PC_REQUEST = 0,
 	PC_LISTENING,
 	PC_BROADCAST,
+	PC_REQUEST_PRIVATE,
 } client_type;
 
 typedef enum {
@@ -303,17 +320,25 @@ typedef enum {
 	PM_REQUEST_GET_SIZE = 2,
 	PM_REQUEST_KILL_APP = 3,
 	PM_REQUEST_CHECK_APP = 4,
-	PM_REQUEST_GET_JUNK_INFO = 5,
 	PM_REQUEST_MAX
 }pkgmgr_request_service_type;
 
 typedef enum {
+	//sync, get data, total size for one requested pkgid
 	PM_GET_TOTAL_SIZE = 0,
 	PM_GET_DATA_SIZE = 1,
+
+	//async, get total used storage size
 	PM_GET_ALL_PKGS = 2,
+
+	//async, get a pkgid's data, total size for all installed pkg
 	PM_GET_SIZE_INFO = 3,
+
+	//deprecated
 	PM_GET_TOTAL_AND_DATA = 4,
 	PM_GET_SIZE_FILE = 5,
+
+	//async, get data, cache, app size based on "pkg_size_info_t"
 	PM_GET_PKG_SIZE_INFO = 6,
 	PM_GET_TOTAL_PKG_SIZE_INFO = 7,
 	PM_GET_MAX
@@ -365,6 +390,56 @@ int pkgmgr_client_install(pkgmgr_client *pc, const char *pkg_type,
 			    const char *descriptor_path, const char *pkg_path,
 			    const char *optional_file, pkgmgr_mode mode,
 			    pkgmgr_handler event_cb, void *data);
+
+#ifdef _APPFW_FEATURE_EXPANSION_PKG_INSTALL
+/**
+ * @brief	This API installs package.
+ *
+ * This API is for package-manager client application.\n
+ *
+ * @param[in]	pc	pkgmgr_client
+ * @param[in]	pkg_type		package type
+ * @param[in]	descriptor_path	full path that descriptor is located
+ * @param[in]	pkg_path		full path that package file is located
+ * @param[in]	tep_path		full path that tep file is located at
+ * @param[in]	tep_move		if TRUE, source file will be moved, else it will be copied
+ * @param[in]	optional_file	optional file which is used for installation
+ * @param[in]	mode		installation mode  - PM_DEFAULT, PM_QUIET
+ * @param[in]	event_cb	user callback
+ * @param[in]	data		user data
+ * @return	request_id (>0) if success, error code(<0) if fail\n
+ * @retval	PKGMGR_R_OK	success
+ * @retval	PKGMGR_R_EINVAL	invalid argument
+ * @retval	PKGMGR_R_ECOMM	communication error
+*/
+int pkgmgr_client_install_with_tep(pkgmgr_client * pc, const char *pkg_type,
+			      const char *descriptor_path, const char *pkg_path,
+			      const char *tep_path, bool tep_move, const char *optional_file,
+			      pkgmgr_mode mode, pkgmgr_handler event_cb, void *data);
+#endif
+
+
+#ifdef _APPFW_FEATURE_MOUNT_INSTALL
+/**
+ * @brief	This API installs package.
+ *
+ * This API is for package-manager client application.\n
+ *
+ * @param[in]	pc	pkgmgr_client
+ * @param[in]	pkg_type		package type
+ * @param[in]	pkg_path		full path that package file is located
+ * @param[in]	optional_file	optional file which is used for installation
+ * @param[in]	event_cb	user callback
+ * @param[in]	data		user data
+ * @return	request_id (>0) if success, error code(<0) if fail\n
+ * @retval	PKGMGR_R_OK	success
+ * @retval	PKGMGR_R_EINVAL	invalid argument
+ * @retval	PKGMGR_R_ECOMM	communication error
+*/
+int pkgmgr_client_mount_install(pkgmgr_client * pc, const char *pkg_type,
+			const char *pkg_path, const char *optional_file,
+			pkgmgr_handler event_cb, void *data);
+#endif
 
 /**
  * @brief	This API reinstalls package.
@@ -502,6 +577,34 @@ int pkgmgr_client_activate_appv(pkgmgr_client * pc, const char *appid, char *con
 int pkgmgr_client_deactivate_app(pkgmgr_client *pc, const char *appid);
 
 /**
+ * @brief	This API enables application's background operation.
+ *
+ * This API is for package-manager client application.\n
+ *
+ * @param[in]	pc	pkgmgr_client
+ * @param[in]	appid	applicaiton id
+ * @return	request_id (>0) if success, error code(<0) if fail\n
+ * @retval	PKGMGR_R_OK	success
+ * @retval	PKGMGR_R_EINVAL	invalid argument
+ * @retval	PKGMGR_R_ECOMM	communication error
+*/
+int pkgmgr_client_enable_app_bg_operation(pkgmgr_client *pc, const char *appid);
+
+/**
+ * @brief	This API disables application's background operation.
+ *
+ * This API is for package-manager client application.\n
+ *
+ * @param[in]	pc	pkgmgr_client
+ * @param[in]	appid	applicaiton id
+ * @return	request_id (>0) if success, error code(<0) if fail\n
+ * @retval	PKGMGR_R_OK	success
+ * @retval	PKGMGR_R_EINVAL	invalid argument
+ * @retval	PKGMGR_R_ECOMM	communication error
+*/
+int pkgmgr_client_disable_app_bg_operation(pkgmgr_client *pc, const char *appid);
+
+/**
  * @brief	This API deletes application's private data.
  *
  * This API is for package-manager client application.\n
@@ -530,6 +633,34 @@ int pkgmgr_client_clear_user_data(pkgmgr_client *pc, const char *pkg_type,
  * @retval	PKGMGR_R_EINVAL	invalid argument
 */
 int pkgmgr_client_set_status_type(pkgmgr_client *pc, int status_type);
+
+
+/**
+ * @brief	This API set checksum value of pkg file to be installed to prevent install hijack
+ *
+ * This API is for package-manager client application.\n
+ *
+ * @param[in]	pc	pkgmgr_client
+ * @param[in]	pkg_chksum checksum of package file which to be installed
+ * @return	return 0 if success, error code(<0) if fail\n
+ * @retval	PKGMGR_R_OK	success
+ * @retval	PKGMGR_R_EINVAL	invalid argument
+*/
+int pkgmgr_client_set_pkg_chksum(pkgmgr_client *pc, char *pkg_chksum);
+
+/**
+ * @brief	This API set debug mode for sdk
+ *
+ * This API is for package-manager client application.\n
+ *
+ * @param[in]	pc	pkgmgr_client
+ * @param[in]	debug_mode	debug mode
+ * @return	return 0 if success, error code(<0) if fail\n
+ * @retval	PKGMGR_R_OK	success
+ * @retval	PKGMGR_R_EINVAL	invalid argument
+*/
+int pkgmgr_client_set_debug_mode(pkgmgr_client *pc, bool debug_mode);
+
 
 /**
  * @brief	This API request to listen the pkgmgr's broadcasting
@@ -666,9 +797,6 @@ int pkgmgr_client_get_package_size_info(pkgmgr_client *pc, const char *pkgid, pk
  */
 int pkgmgr_client_get_total_package_size_info(pkgmgr_client *pc, pkgmgr_total_pkg_size_info_receive_cb result_cb, void *user_data);
 
-int pkgmgr_client_enable_pkg(const char *pkgid);
-int pkgmgr_client_disable_pkg(const char *pkgid);
-
 /**
  * @brief	This API removes cache directories
  *
@@ -695,10 +823,6 @@ int pkgmgr_client_clear_cache_dir(const char *pkgid);
  * @retval	PKGMGR_R_ERROR	internal error
 */
 int pkgmgr_client_clear_all_cache_dir(void);
-
-
-// API for wms on wearable
-int pkgmgr_client_reset_device(void);
 
 
 /**

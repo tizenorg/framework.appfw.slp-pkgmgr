@@ -25,8 +25,28 @@
 
 
 #include "comm_config.h"
+#include "comm_internal.h"
 #include "comm_status_broadcast_server.h"
 #include <dbus/dbus.h>
+#include <stdio.h>
+#include <unistd.h>
+#include <fcntl.h>
+
+#define MAX_ZONE_NAME_LEN 128
+#define ZONE_HOST "host"
+
+static char *__get_signal_name(char *post_name, const char *pre_name, const char *zone)
+{
+	memset(post_name, 0, MAX_ZONE_NAME_LEN);
+	if (zone && strlen(zone) && strcmp(zone, ZONE_HOST) != 0) {
+		snprintf(post_name, MAX_ZONE_NAME_LEN, "%s_", pre_name);
+		strncat(post_name, zone, MAX_ZONE_NAME_LEN - strlen(post_name) - 1);
+	} else {
+		snprintf(post_name, MAX_ZONE_NAME_LEN, "%s", pre_name);
+	}
+
+	return post_name;
+}
 
 /********************************************
  * pure dbus signal service for internal use
@@ -62,10 +82,6 @@ static char *__get_prifix(int status_type)
 
 		case COMM_STATUS_BROADCAST_GET_SIZE:
 			prifix = COMM_STATUS_BROADCAST_DBUS_GET_SIZE_SERVICE_PREFIX;
-			break;
-
-		case COMM_STATUS_BROADCAST_GET_JUNK_INFO:
-			prifix = COMM_STATUS_BROADCAST_DBUS_GET_JUNK_INFO_SERVICE_PREFIX;
 			break;
 
 		default:
@@ -107,10 +123,6 @@ static char *__get_path(int status_type)
 			path = COMM_STATUS_BROADCAST_DBUS_GET_SIZE_PATH;
 			break;
 
-		case COMM_STATUS_BROADCAST_GET_JUNK_INFO:
-			path = COMM_STATUS_BROADCAST_DBUS_GET_JUNK_INFO_PATH;
-			break;
-
 		default:
 			path = NULL;
 	}
@@ -150,10 +162,6 @@ static char *__get_interface(int status_type)
 			interface = COMM_STATUS_BROADCAST_DBUS_GET_SIZE_INTERFACE;
 			break;
 
-		case COMM_STATUS_BROADCAST_GET_JUNK_INFO:
-			interface = COMM_STATUS_BROADCAST_DBUS_GET_JUNK_INFO_INTERFACE;
-			break;
-
 		default:
 			interface = NULL;
 	}
@@ -191,10 +199,6 @@ static char *__get_name(int status_type)
 
 		case COMM_STATUS_BROADCAST_GET_SIZE:
 			name = COMM_STATUS_BROADCAST_EVENT_GET_SIZE;
-			break;
-
-		case COMM_STATUS_BROADCAST_GET_JUNK_INFO:
-			name = COMM_STATUS_BROADCAST_EVENT_GET_JUNK_INFO;
 			break;
 
 		default:
@@ -256,9 +260,41 @@ comm_status_broadcast_server_send_signal(int comm_status_type, DBusConnection *c
 		return;
 	}
 
-	msg = dbus_message_new_signal(__get_path(comm_status_type), __get_interface(comm_status_type), __get_name(comm_status_type));
+	char temp_name[MAX_ZONE_NAME_LEN] = {0, };
+	char *zone = NULL;
+	int pid = getpid();
+	if (get_zone_name(pid, temp_name, MAX_ZONE_NAME_LEN) == -1) {
+		dbg("retry to get zone by gethostname");
+		gethostname(temp_name, sizeof(temp_name));
+	}
+	if (strlen(temp_name)) {
+		zone = strdup(temp_name);
+		dbg("send signal : pid(%d), zone(%s), pkg_typ(%s), pkg_id(%s), key(%s), val(%s)",
+				 pid, zone, pkg_type, pkgid, key, val);
+	}
+
+	dbg("send signal : pid(%d), pkg_typ(%s), pkg_id(%s), key(%s), val(%s)",
+				 pid, pkg_type, pkgid, key, val);
+	dbg("send signal : interface_name(%s), signal_name(%s)",
+		__get_interface(comm_status_type), __get_name(comm_status_type));
+
+	/* for new signal name */
+	char signal_name[128] = {0, };
+
+	/*
+	dbg("send signal : %s, %s", __get_signal_name(signal_name,
+		__get_name(comm_status_type), zone), __get_name(comm_status_type));
+	*/
+
+	msg = dbus_message_new_signal(__get_path(comm_status_type),
+		__get_interface(comm_status_type),
+		__get_signal_name(signal_name,
+		__get_name(comm_status_type),
+		zone));
 	if (NULL == msg) {
 		dbg("msg NULL");
+		if (zone)
+			free(zone);
 		return;
 	}
 
@@ -278,6 +314,9 @@ comm_status_broadcast_server_send_signal(int comm_status_type, DBusConnection *c
 	}
 	dbus_connection_flush(conn);
 	dbus_message_unref(msg);
+
+	if (zone)
+		free(zone);
 }
 
 API void comm_status_broadcast_server_disconnect(DBusConnection *conn)

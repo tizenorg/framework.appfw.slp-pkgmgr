@@ -57,7 +57,6 @@ typedef void* pkgmgr_instcertinfo_h;
 #define PKGMGR_INSTALLER_END_KEY_STR								"end"
 #define PKGMGR_INSTALLER_INSTALL_PERCENT_KEY_STR					"install_percent"
 #define PKGMGR_INSTALLER_GET_SIZE_KEY_STR							"get_size"
-#define PKGMGR_INSTALLER_GET_JUNK_INFO_KEY_STR						"get_junkinfo"
 
 #define PKGMGR_INSTALLER_INSTALL_EVENT_STR							"install"
 #define PKGMGR_INSTALLER_UNINSTALL_EVENT_STR						"uninstall"
@@ -84,7 +83,13 @@ enum {
 	PKGMGR_REQ_GETSIZE = 7,
 	PKGMGR_REQ_UPGRADE = 8,
 	PKGMGR_REQ_SMACK = 9,
-	PKGMGR_REQ_GETJUNKINFO = 10,
+#ifdef _APPFW_FEATURE_EXPANSION_PKG_INSTALL
+	PKGMGR_REQ_INSTALL_TEP = 10,
+#endif
+#ifdef _APPFW_FEATURE_MOUNT_INSTALL
+	PKGMGR_REQ_MOUNT_INSTALL = 11,
+#endif
+
 };
 
 enum {
@@ -287,7 +292,7 @@ int main(int argc, char **argv)
 
 	pkgmgr_installer_free(pi);
 	return r;
-}	
+}
 @endcode
  */
 const char *pkgmgr_installer_get_session_id(pkgmgr_installer *pi);
@@ -321,7 +326,7 @@ int main(int argc, char **argv)
 
 	pkgmgr_installer_free(pi);
 	return r;
-}	
+}
 @endcode
  */
 const char *pkgmgr_installer_get_license_path(pkgmgr_installer *pi);
@@ -391,10 +396,43 @@ int main(int argc, char **argv)
 
 	pkgmgr_installer_free(pi);
 	return r;
-}	
+}
 	@endcode
  */
 int pkgmgr_installer_is_quiet(pkgmgr_installer *pi);
+
+/**
+	@brief		Get checksum value of pkg file
+	@pre		pkgmgr_installer_receive_request() must be called.
+	@post		None
+	@see		pkgmgr_installer_receive_request
+	@param[in]	pi	pkgmgr_installer object
+	@return		Operation result
+	@retval		package checksum value
+	@remark		None
+	@code
+#include <pkgmgr_installer.h>
+int main(int argc, char **argv)
+{
+	pkgmgr_installer *pi;
+	int r = 0;
+
+	pi = pkgmgr_installer_new();
+	if(!pi) return -1;
+	if(pkgmgr_installer_receive_request(pi, argc, argv)) {
+		r = -1;
+		goto CLEANUP_RET;
+	}
+	checksum_value = pkgmgr_installer_get_pkg_chksum(pi);
+
+	//Do Something
+
+	pkgmgr_installer_free(pi);
+	return r;
+}
+	@endcode
+ */
+const char *pkgmgr_installer_get_pkg_chksum(pkgmgr_installer *pi);
 
 /**
 	@brief		Get move type
@@ -464,7 +502,45 @@ int main(int argc, char **argv)
 const char *pkgmgr_installer_get_caller_pkgid(pkgmgr_installer *pi);
 
 /**
-	@brief		Send a process status signal 
+	@brief		Get if a request is with debug mode or not
+	@pre		pkgmgr_installer_receive_request() must be called.
+	@post		None
+	@see		pkgmgr_installer_receive_request
+	@param[in]	pi	pkgmgr_installer object
+	@return		Operation result
+	@retval		false if a request is not debug mode
+	@retval		true if a request is debug mode
+	@remark		None
+	@code
+#include <pkgmgr_installer.h>
+int main(int argc, char **argv)
+{
+	pkgmgr_installer *pi;
+	int r = 0;
+
+	pi = pkgmgr_installer_new();
+	if(!pi) return -1;
+	if(pkgmgr_installer_receive_request(pi, argc, argv)) {
+		r = -1;
+		goto CLEANUP_RET;
+	}
+	if(pkgmgr_installer_is_debug_mode(pi)) {
+		// Do quiet mode work...
+	} else {
+		// Do normal mode work...
+	}
+
+	pkgmgr_installer_free(pi);
+	return r;
+}
+	@endcode
+ */
+int pkgmgr_installer_is_debug_mode(pkgmgr_installer *pi);
+
+
+
+/**
+	@brief		Send a process status signal
 	@pre		None
 	@post		None
 	@see		None
@@ -499,13 +575,57 @@ int main(int argc, char **argv)
 
 	pkgmgr_installer_free(pi);
 	return r;
-}	
+}
 	@endcode
  */
 int pkgmgr_installer_send_signal(pkgmgr_installer *pi,
 				 const char *pkg_type,
 				 const char *pkgid, const char *key,
 				 const char *val);
+
+/**
+	@brief		Send a signal which indicates application is being uninstalled
+	@pre		None
+	@post		None
+	@see		None
+	@param[in]	pi	pkgmgr_installer object
+	@param[in]	pkg_type	package type: "deb", "jar", "wgt", ...
+	@param[in]	pkgid	package id
+	@param[in]	key			Signal key
+	@param[in]	val			Signal value
+	@return		Operation result
+	@retval		0 on success
+	@retval		-errno on failure
+	@code
+#include <pkgmgr_installer.h>
+int main(int argc, char **argv)
+{
+	pkgmgr_installer *pi;
+	int r = 0;
+	char *session_id = NULL;
+
+	pi = pkgmgr_installer_new();
+	if(!pi) return -1;
+	if(pkgmgr_installer_receive_request(pi, argc, argv)) {
+		r = -1;
+		goto CLEANUP_RET;
+	}
+
+	// Do something...
+	pkgmgr_installer_send_app_uninstall_signal(pi,
+	 "tpk", "org.tizen.foo");
+	// A sample signal
+
+	pkgmgr_installer_free(pi);
+	return r;
+}
+	@endcode
+ */
+int pkgmgr_installer_send_app_uninstall_signal(pkgmgr_installer *pi,
+			     const char *pkg_type,
+			     const char *pkgid,
+			     const char *val);
+
 
 /**
  * @brief	This API creates the certinfo handle.
@@ -558,7 +678,27 @@ int pkgmgr_installer_destroy_certinfo_set_handle(pkgmgr_instcertinfo_h handle);
  * @param[in]	pkgid				package ID
  * @return	0 if success, error code(<0) if fail\n
 */
- int pkgmgr_installer_delete_certinfo(const char *pkgid);
+int pkgmgr_installer_delete_certinfo(const char *pkgid);
+
+#ifdef _APPFW_FEATURE_EXPANSION_PKG_INSTALL
+/**
+* @brief pkgmgr_installer_get_tep_path
+*
+* @param pi	pkgmgr_installer object
+*
+* @returns tep path on success. On failure, it returns NULL
+*/
+const char *pkgmgr_installer_get_tep_path(pkgmgr_installer *pi);
+
+/**
+* @brief pkgmgr_installer_get_tep_move_type - returns the tep move type
+*
+* @param pi	pkgmgr_installer object
+*
+* @return returns 0 if tep move type is copy, 1 if tep move type is move. On error, it returns -1
+*/
+int pkgmgr_installer_get_tep_move_type(pkgmgr_installer *pi);
+#endif
 
 #ifdef __cplusplus
 }

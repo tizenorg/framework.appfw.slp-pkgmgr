@@ -4,20 +4,38 @@
 		<provide>
 			<label name="pkgmgr::svc"/>
 			<label name="pkgmgr::info"/>
+			<label name="pkgmgr::cache"/>
 		</provide>
 		<request>
+			<smack request="_" type="rwx"/>
+			<smack request="app-svc::db" type="rw"/>
+			<smack request="cert-svc" type="rx"/>
+			<smack request="ca-certificates::ssl-certs" type="rx"/>
+			<smack request="data-provider-master::data" type="rx"/>
 			<smack request="pkgmgr::svc" type="rwx"/>
 			<smack request="pkgmgr::info" type="rwx"/>
+			<smack request="pkgmgr::cache" type="rwx"/>
+			<smack request="pkgmgr-parser" type="rx"/>
 			<smack request="dbus" type="rwx"/>
+			<smack request="email-service" type="rx"/>
 			<smack request="system::homedir" type="rwxat"/>
 			<smack request="system::media" type="rwxat"/>
-			<smack request="ail::db" type="rwx"/>
-			<smack request="system::vconf" type="rwxat"/>
-			<smack request="system::vconf_inhouse" type="rwxat"/>
 			<smack request="pkgmgr::db" type="rwx"/>
-			<smack request="device::sys_logging" type="w"/>
-			<smack request="device::app_logging" type="w"/>
+			<smack request="pkgmgr-parser" type="rx"/>
+			<smack request="pkgmgr-server" type="rwx"/>
+			<smack request="privacy-manager::db" type="rw"/>
+			<smack request="device::sys_logging" type="rw"/>
+			<smack request="device::app_logging" type="rw"/>
+			<smack request="rpm-backend" type="rwx"/>
 			<smack request="sdbd" type="r"/>
+			<smack request="shortcut-service::db" type="rw"/>
+			<smack request="security-server::label" type="w"/>
+			<smack request="security-server::api-permissions" type="w"/>
+			<smack request="tizen::vconf::public::r" type="rl"/>
+			<smack request="tizen::vconf::public::r::platform::rw" type="rw"/>
+			<smack request="tizen::vconf::setting::admin" type="rl"/>
+			<smack request="system::ext_storage" type="rxl"/>
+			<smack request="system::ext_storage_appdata" type="rwx"/>
 		</request>
 	</define>
 	<request>
@@ -25,11 +43,11 @@
 	</request>
 	<assign>
 		<filesystem path="/usr/bin/pkg_fota" exec_label="pkgmgr"/>
+		<filesystem path="/usr/bin/pkg_db_upg" exec_label="pkgmgr"/>
 		<filesystem path="/usr/bin/pkg_initdb" exec_label="pkgmgr"/>
 		<filesystem path="/usr/bin/pkgcmd" exec_label="pkgmgr"/>
 		<filesystem path="/usr/bin/pkginfo" exec_label="pkgmgr"/>
 		<filesystem path="/usr/bin/pkg_getsize" exec_label="pkgmgr"/>
 		<filesystem path="/usr/bin/pkg" exec_label="pkgmgr"/>
-		<filesystem path="/usr/lib/libpkgmgr_parser_lib_sample.so" label="_"/>
 	</assign>
 </manifest>

@@ -73,12 +73,13 @@ time_t _get_info_time(const char *key,
 		      pkg_detail_info);
 
 void _app_str_trim(char *input);
-char *_get_backend_path(const char *input_path);
+char *_get_backend_path(const char *pkgid);
 char *_get_backend_path_with_type(const char *type);
 
 int _get_mime_from_file(const char *filename, char *mimetype, int len);
 int _get_mime_extension(const char *mimetype, char *ext, int len);
 
 char *_get_type_from_zip(const char *zip_name);
+char *_get_backend_from_zip(const char *zip_name);
 
 #endif				/* __PKG_MANAGER_INTERNAL_H__ */

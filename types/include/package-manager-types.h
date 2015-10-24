@@ -61,13 +61,13 @@ extern "C" {
 
 /**
  * @mainpage
- * 
+ *
  * This is package manager
  *
  * Packaeg manager is used to install/uninstall the packages.\n
  * package includes dpkg, java, widget, etc. and it can be added\n
  * Security is considered on current package manager\n
- * 
+ *
  */
 
 /**
@@ -84,7 +84,7 @@ extern "C" {
 #define PKG_URL_STRING_LEN_MAX 1024
 #define PKG_LABEL_STRING_LEN_MAX 128
 
-/** 
+/**
  *@brief application's structure retrieved by package-manager
  */
 typedef struct _package_manager_pkg_info_t {
@@ -112,6 +112,8 @@ typedef struct _package_manager_pkg_detail_info_t {
 	char label[PKG_LABEL_STRING_LEN_MAX];
 	char author[PKG_VALUE_STRING_LEN_MAX];
 	char *icon_buf;
+	char *pkg_chksum;
+
 	int icon_size;
 	GList *privilege_list;
 } package_manager_pkg_detail_info_t;

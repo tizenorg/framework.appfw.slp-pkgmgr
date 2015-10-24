@@ -89,41 +89,43 @@
 #define COMM_STATUS_BROADCAST_DBUS_INTERFACE \
 	"org.tizen.pkgmgr_status"
 #define COMM_STATUS_BROADCAST_SIGNAL_STATUS "status"
+#define LEN_COMM_STATUS_BROADCAST_SIGNAL_STATUS 6
 
 #define COMM_STATUS_BROADCAST_DBUS_INSTALL_SERVICE_PREFIX "org.tizen.pkgmgr.install"
 #define COMM_STATUS_BROADCAST_DBUS_INSTALL_PATH	"/org/tizen/pkgmgr/install"
 #define COMM_STATUS_BROADCAST_DBUS_INSTALL_INTERFACE "org.tizen.pkgmgr.install"
 #define COMM_STATUS_BROADCAST_EVENT_INSTALL "install"
+#define LEN_COMM_STATUS_BROADCAST_EVENT_INSTALL 7
 
 #define COMM_STATUS_BROADCAST_DBUS_UNINSTALL_SERVICE_PREFIX "org.tizen.pkgmgr.uninstall"
 #define COMM_STATUS_BROADCAST_DBUS_UNINSTALL_PATH	"/org/tizen/pkgmgr/uninstall"
 #define COMM_STATUS_BROADCAST_DBUS_UNINSTALL_INTERFACE "org.tizen.pkgmgr.uninstall"
 #define COMM_STATUS_BROADCAST_EVENT_UNINSTALL "uninstall"
+#define LEN_COMM_STATUS_BROADCAST_EVENT_UNINSTALL 9
 
 #define COMM_STATUS_BROADCAST_DBUS_MOVE_SERVICE_PREFIX "org.tizen.pkgmgr.move"
 #define COMM_STATUS_BROADCAST_DBUS_MOVE_PATH	"/org/tizen/pkgmgr/move"
 #define COMM_STATUS_BROADCAST_DBUS_MOVE_INTERFACE "org.tizen.pkgmgr.move"
 #define COMM_STATUS_BROADCAST_EVENT_MOVE "move"
+#define LEN_COMM_STATUS_BROADCAST_EVENT_MOVE 4
 
 #define COMM_STATUS_BROADCAST_DBUS_INSTALL_PROGRESS_SERVICE_PREFIX "org.tizen.pkgmgr.install.progress"
 #define COMM_STATUS_BROADCAST_DBUS_INSTALL_PROGRESS_PATH	"/org/tizen/pkgmgr/install/progress"
 #define COMM_STATUS_BROADCAST_DBUS_INSTALL_PROGRESS_INTERFACE "org.tizen.pkgmgr.install.progress"
 #define COMM_STATUS_BROADCAST_EVENT_INSTALL_PROGRESS "install_progress"
+#define LEN_COMM_STATUS_BROADCAST_EVENT_INSTALL_PROGRESS 16
 
 #define COMM_STATUS_BROADCAST_DBUS_UPGRADE_SERVICE_PREFIX "org.tizen.pkgmgr.upgrade"
 #define COMM_STATUS_BROADCAST_DBUS_UPGRADE_PATH	"/org/tizen/pkgmgr/upgrade"
 #define COMM_STATUS_BROADCAST_DBUS_UPGRADE_INTERFACE "org.tizen.pkgmgr.upgrade"
 #define COMM_STATUS_BROADCAST_EVENT_UPGRADE "upgrade"
+#define LEN_COMM_STATUS_BROADCAST_EVENT_UPGRADE 7
 
 #define COMM_STATUS_BROADCAST_DBUS_GET_SIZE_SERVICE_PREFIX "org.tizen.pkgmgr.get.size"
 #define COMM_STATUS_BROADCAST_DBUS_GET_SIZE_PATH	"/org/tizen/pkgmgr/get/size"
 #define COMM_STATUS_BROADCAST_DBUS_GET_SIZE_INTERFACE "org.tizen.pkgmgr.get.size"
 #define COMM_STATUS_BROADCAST_EVENT_GET_SIZE "get_size"
-
-#define COMM_STATUS_BROADCAST_DBUS_GET_JUNK_INFO_SERVICE_PREFIX "org.tizen.pkgmgr.get.junkinfo"
-#define COMM_STATUS_BROADCAST_DBUS_GET_JUNK_INFO_PATH	"/org/tizen/pkgmgr/get/junkinfo"
-#define COMM_STATUS_BROADCAST_DBUS_GET_JUNK_INFO_INTERFACE "org.tizen.pkgmgr.get.junkinfo"
-#define COMM_STATUS_BROADCAST_EVENT_GET_JUNK_INFO "get_junkinfo"
+#define LEN_COMM_STATUS_BROADCAST_EVENT_GET_SIZE 8
 
 /********
  * enums
@@ -131,8 +133,11 @@
 
 /* req_type */
 enum {
-	/* to installer */
-	COMM_REQ_TO_INSTALLER = 1,
+	/* to install */
+	COMM_REQ_TO_INSTALL = 1,
+
+	/* to uninstall */
+	COMM_REQ_TO_UNINSTALL,
 
 	/* activate pkg */
 	COMM_REQ_ACTIVATE_PKG,
@@ -145,6 +150,12 @@ enum {
 
 	/* deactivate app */
 	COMM_REQ_DEACTIVATE_APP,
+
+	/* enable app background operation */
+	COMM_REQ_ENABLE_BG_OPERATION,
+
+	/* disable app background operation */
+	COMM_REQ_DISABLE_BG_OPERATION,
 
 	/* activate app with label */
 	COMM_REQ_ACTIVATE_APP_WITH_LABEL,
@@ -173,9 +184,6 @@ enum {
 	/* make external directories for app */
 	COMM_REQ_MAKE_EXTERNAL_DIR,
 
-	/* get junk file information */
-	COMM_REQ_GET_JUNK_INFO,
-
 	COMM_REQ_MAX_SENTINEL
 };
 
@@ -198,7 +206,6 @@ enum {
 	COMM_STATUS_BROADCAST_INSTALL_PROGRESS,
 	COMM_STATUS_BROADCAST_UPGRADE,
 	COMM_STATUS_BROADCAST_GET_SIZE,
-	COMM_STATUS_BROADCAST_GET_JUNK_INFO,
 	COMM_STATUS_BROADCAST_MAX
 };
 

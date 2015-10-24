@@ -32,11 +32,27 @@ extern "C" {
 #endif
 
 /* Supported options */
-const char *short_opts = "k:l:i:d:c:m:t:o:r:p:s:";
+#ifdef _APPFW_FEATURE_MOUNT_INSTALL
+#ifdef _APPFW_FEATURE_EXPANSION_PKG_INSTALL
+const char *short_opts = "k:l:i:d:c:m:t:o:r:p:s:e:M:C:wG";
+#else
+const char *short_opts = "k:l:i:d:c:m:t:o:r:p:s:C:wG";
+#endif
+#else
+#ifdef _APPFW_FEATURE_EXPANSION_PKG_INSTALL
+const char *short_opts = "k:l:i:d:c:m:t:o:r:p:s:e:M:C:G";
+#else
+const char *short_opts = "k:l:i:d:c:m:t:o:r:p:s:C:G";
+#endif
+#endif
+
 const struct option long_opts[] = {
 	{ "session-id", 1, NULL, 'k' },
 	{ "license-path", 1, NULL, 'l' },
 	{ "install", 1, NULL, 'i' },
+#ifdef _APPFW_FEATURE_MOUNT_INSTALL
+	{ "mount-install", 0, NULL, 'w' },
+#endif
 	{ "uninstall", 1, NULL, 'd' },
 	{ "clear", 1, NULL, 'c' },
 	{ "move", 1, NULL, 'm' },
@@ -45,6 +61,12 @@ const struct option long_opts[] = {
 	{ "reinstall", 0, NULL, 'r' },
 	{ "caller-pkgid", 1, NULL, 'p' },
 	{ "smack", 1, NULL, 's' },
+#ifdef _APPFW_FEATURE_EXPANSION_PKG_INSTALL
+	{ "extension", 1, NULL, 'e' },
+	{ "tep_move", 1, NULL, 'M'},
+#endif
+	{ "debug-mode", 0, NULL, 'G'},
+	{ "chksum", 1, NULL, 'C'},
 	{ 0, 0, 0, 0 }	/* sentinel */
 };
 

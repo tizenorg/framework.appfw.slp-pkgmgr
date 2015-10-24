@@ -20,29 +20,9 @@
  *
  */
 
-#include "comm_socket.h"
+#ifndef __COMM_INTERNAL_H__
+#define __COMM_INTERNAL_H__
 
-#include <assert.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+int get_zone_name(int pid, char *zone_name, int len);
 
-static void __test_comm_socket_create_server(void);
-static void __test_comm_socket_create_server(void)
-{
-	comm_socket *cs;
-	cs = _comm_socket_new();
-
-	char *tmp_file_path = "/tmp/____asjdfjlsdjlfjxcvj";
-	assert(0 == _comm_socket_create_server(cs, tmp_file_path));
-
-	_comm_socket_free(cs);
-}
-
-int main(int argc, char **argv)
-{
-	__test_comm_socket_create_server();
-
-	return 0;
-}
-
+#endif				/* __COMM_INTERNAL_H__ */

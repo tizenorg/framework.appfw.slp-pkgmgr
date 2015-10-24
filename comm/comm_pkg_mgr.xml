@@ -4,6 +4,7 @@
 	<interface name="org.tizen.pkgmgr">
 		<annotation name="org.freedesktop.DBus.GLib.CSymbol" value="pkgmgr" />
 		<method name="Request">
+			<annotation name="org.freedesktop.DBus.GLib.Async" value="yes" />
 			<arg type="s" name="req_id" direction="in" />
 			<arg type="i" name="req_type" direction="in" />
 			<arg type="s" name="pkg_type" direction="in" />
@@ -13,6 +14,25 @@
 			<arg type="i" name="ret" direction="out" />
 		</method>
 		<method name="CreateExternalDirectory">
+			<annotation name="org.freedesktop.DBus.GLib.Async" value="yes" />
+			<arg type="i" name="ret" direction="out" />
+		</method>
+		<method name="DrmGenerateLicenseRequest">
+			<arg type="s" name="resp_data" direction="in" />
+			<arg type="s" name="cookie" direction="in" />
+			<arg type="s" name="req_data" direction="out" />
+			<arg type="s" name="license_url" direction="out" />
+			<arg type="i" name="ret" direction="out" />
+		</method>
+		<method name="DrmRegisterLicense">
+			<arg type="s" name="resp_data" direction="in" />
+			<arg type="s" name="cookie" direction="in" />
+			<arg type="i" name="ret" direction="out" />
+		</method>
+		<method name="DrmDecryptPackage">
+			<arg type="s" name="drm_file_path" direction="in" />
+			<arg type="s" name="decrypted_file_path" direction="in" />
+			<arg type="s" name="cookie" direction="in" />
 			<arg type="i" name="ret" direction="out" />
 		</method>
 	</interface>

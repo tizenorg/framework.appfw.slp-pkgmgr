@@ -1,6 +1,0 @@
-[Unit]
-Description=SLP Package Manager
-
-[Service]
-BusName=org.tizen.pkgmgr
-ExecStart=/usr/bin/pkgmgr-server

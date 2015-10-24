@@ -38,9 +38,10 @@ enum {
 typedef struct comm_client comm_client;
 typedef void (*status_cb) (void *cb_data, const char *req_id,
 			   const char *pkg_type, const char *pkgid,
-			   const char *key, const char *val);
+			   const char *key, const char *val, const char *zone);
 
 API comm_client *comm_client_new(void);
+API comm_client *comm_client_new_private(void);
 API int comm_client_free(comm_client *cc);
 
 API int comm_client_request(comm_client *cc, const char *req_id,
@@ -49,4 +50,12 @@ API int comm_client_request(comm_client *cc, const char *req_id,
 			    const char *cookie, int is_block);
 
 API int comm_client_set_status_callback(int comm_status_type, comm_client *cc, status_cb cb, void *cb_data);
+
+#ifdef _APPFW_FEATURE_EXPANSION_PKG_INSTALL
+API int comm_client_request_with_tep(comm_client *cc, const char *req_id,
+			    const int req_type, const char *pkg_type,
+			    const char *pkgid, const char *tep_path,
+			    const char *args, const char *cookie, int is_block);
+#endif
+
 #endif				/* __COMM_CLIENT_H__ */

@@ -28,27 +28,51 @@
 #define __COMM_PKG_MGR_SERVER_H__
 
 #include "comm_config.h"
-#include <glib-object.h>
 
-typedef struct PkgMgrObjectClass PkgMgrObjectClass;
-typedef struct PkgMgrObject PkgMgrObject;
-
-/* For returning server object's GType. 
- * I don't use this. Just forward declaration for G_DEFINE_TYPE() macro. */
-API GType pkg_mgr_object_get_type(void);
-#define PKG_MGR_TYPE_OBJECT (pkg_mgr_object_get_type())
+typedef struct pkg_mgr_server_gdbus_s *pkgmgr_server_gdbus_h;
 
 typedef void (*request_callback) (void *cb_data, const char *req_id,
 				  const int req_type, const char *pkg_type,
 				  const char *pkgid, const char *args,
-				  const char *cookie, int *ret);
+				  const char *cookie, const char *zone, int *ret);
 
-typedef int (*create_directory_cb) (void);
+#ifdef _APPFW_FEATURE_EXPANSION_PKG_INSTALL
+typedef void (*request_tep_callback) (void *cb_data, const char *req_id,
+				  const int req_type, const char *pkg_type,
+				  const char *pkgid, const char *tep_path,
+				  const char *args, const char *cookie, const char *zone, int *ret);
+#endif
 
-API void pkg_mgr_set_request_callback(PkgMgrObject *obj,
+typedef int (*create_directory_cb) (const char *zone);
+
+typedef int (*drm_generate_license_request_cb) (const char *resp_data,
+		const char *cookie, char **req_data,
+		char **license_url, int *ret);
+typedef int (*drm_register_license_cb) (const char *resp_data, const char *cookie, int *ret);
+typedef int (*drm_decrypt_package_cb) (const char *drm_file_path,
+		const char *decrypted_file_path, const char *cookie, int *ret);
+
+API int pkg_mgr_server_gdbus_init(pkgmgr_server_gdbus_h *pkgmgr_server_h);
+API void pkg_mgr_server_gdbus_fini(pkgmgr_server_gdbus_h pkgmgr_server);
+
+API void pkg_mgr_set_request_callback(pkgmgr_server_gdbus_h pkgmgr_server,
 		request_callback req_cb, void *cb_data);
 
-API void pkg_mgr_set_callback_to_create_directory(PkgMgrObject *obj,
+#ifdef _APPFW_FEATURE_EXPANSION_PKG_INSTALL
+API void pkg_mgr_set_request_tep_callback(pkgmgr_server_gdbus_h pkgmgr_server,
+		request_tep_callback req_cb, void *cb_data);
+#endif
+
+API void pkg_mgr_set_callback_to_create_directory(pkgmgr_server_gdbus_h pkgmgr_server,
 		create_directory_cb callback);
+
+API void pkg_mgr_set_drm_generate_license_request_callback(pkgmgr_server_gdbus_h pkgmgr_server,
+		drm_generate_license_request_cb gen_license_req_cb);
+
+API void pkg_mgr_set_drm_register_license_callback(pkgmgr_server_gdbus_h pkgmgr_server,
+		drm_register_license_cb reg_license_cb);
+
+API void pkg_mgr_set_drm_decrypt_package_callback(pkgmgr_server_gdbus_h pkgmgr_server,
+		drm_decrypt_package_cb decrypt_pkg_cb);
 
 #endif				/* __COMM_PKG_MGR_SERVER_H__ */
