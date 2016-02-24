@@ -302,7 +302,6 @@ static gboolean pkgmgr_create_external_directory(OrgTizenPkgmgr *obj,
 static gboolean pkgmgr_drm_generate_license_request(OrgTizenPkgmgr *obj,
 		GDBusMethodInvocation *invocation,
 		const gchar *resp_data,
-		const gchar *cookie,
 		gpointer user_data)
 {
 	int res = -1;
@@ -313,7 +312,7 @@ static gboolean pkgmgr_drm_generate_license_request(OrgTizenPkgmgr *obj,
 	dbg("Try to call package_manager_drm_generate_license_request.");
 	if (pkgmgr_server->gen_license_req_cb)
 	{
-		int res = pkgmgr_server->gen_license_req_cb(resp_data, cookie, &req_data, &license_url, &ret);
+		int res = pkgmgr_server->gen_license_req_cb(resp_data, &req_data, &license_url, &ret);
 		if (res < 0)
 		{
 			ERR("Calling package_manager_drm_generate_license_request is failed. error = [%d]", res);
@@ -326,9 +325,7 @@ static gboolean pkgmgr_drm_generate_license_request(OrgTizenPkgmgr *obj,
 
 static gboolean pkgmgr_drm_register_license(OrgTizenPkgmgr *obj,
 		GDBusMethodInvocation *invocation,
-		const gchar *resp_data,
-		const gchar *cookie,
-		gpointer user_data)
+		const gchar *resp_data, gpointer user_data)
 {
 	int res = -1;
 	int ret = 0;
@@ -336,7 +333,7 @@ static gboolean pkgmgr_drm_register_license(OrgTizenPkgmgr *obj,
 	dbg("Try to call package_manager_drm_register_license.");
 	if (pkgmgr_server->reg_license_cb)
 	{
-		res = pkgmgr_server->reg_license_cb(resp_data, cookie, &ret);
+		res = pkgmgr_server->reg_license_cb(resp_data, &ret);
 		if (res < 0)
 		{
 			ERR("Calling package_manager_drm_register_license is failed. error = [%d]",	res);
@@ -350,9 +347,7 @@ static gboolean pkgmgr_drm_register_license(OrgTizenPkgmgr *obj,
 static gboolean pkgmgr_drm_decrypt_package(OrgTizenPkgmgr *obj,
 		GDBusMethodInvocation *invocation,
 		const gchar *drm_file_path,
-		const gchar *decrypted_file_path,
-		const gchar *cookie,
-		gpointer user_data)
+		const gchar *decrypted_file_path, gpointer user_data)
 {
 	int res = -1;
 	int ret = 0;
@@ -360,7 +355,7 @@ static gboolean pkgmgr_drm_decrypt_package(OrgTizenPkgmgr *obj,
 	dbg("Try to call package_manager_drm_decrypt_package.");
 	if (pkgmgr_server->decrypt_pkg_cb)
 	{
-		res = pkgmgr_server->decrypt_pkg_cb(drm_file_path, decrypted_file_path, cookie, &ret);
+		res = pkgmgr_server->decrypt_pkg_cb(drm_file_path, decrypted_file_path, &ret);
 		if (res < 0)
 		{
 			ERR("Calling package_manager_drm_decrypt_package is failed. error = [%d]", res);

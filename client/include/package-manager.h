@@ -634,20 +634,6 @@ int pkgmgr_client_clear_user_data(pkgmgr_client *pc, const char *pkg_type,
 */
 int pkgmgr_client_set_status_type(pkgmgr_client *pc, int status_type);
 
-
-/**
- * @brief	This API set checksum value of pkg file to be installed to prevent install hijack
- *
- * This API is for package-manager client application.\n
- *
- * @param[in]	pc	pkgmgr_client
- * @param[in]	pkg_chksum checksum of package file which to be installed
- * @return	return 0 if success, error code(<0) if fail\n
- * @retval	PKGMGR_R_OK	success
- * @retval	PKGMGR_R_EINVAL	invalid argument
-*/
-int pkgmgr_client_set_pkg_chksum(pkgmgr_client *pc, char *pkg_chksum);
-
 /**
  * @brief	This API set debug mode for sdk
  *

@@ -46,11 +46,10 @@ typedef void (*request_tep_callback) (void *cb_data, const char *req_id,
 typedef int (*create_directory_cb) (const char *zone);
 
 typedef int (*drm_generate_license_request_cb) (const char *resp_data,
-		const char *cookie, char **req_data,
-		char **license_url, int *ret);
-typedef int (*drm_register_license_cb) (const char *resp_data, const char *cookie, int *ret);
+		char **req_data, char **license_url, int *ret);
+typedef int (*drm_register_license_cb) (const char *resp_data, int *ret);
 typedef int (*drm_decrypt_package_cb) (const char *drm_file_path,
-		const char *decrypted_file_path, const char *cookie, int *ret);
+		const char *decrypted_file_path, int *ret);
 
 API int pkg_mgr_server_gdbus_init(pkgmgr_server_gdbus_h *pkgmgr_server_h);
 API void pkg_mgr_server_gdbus_fini(pkgmgr_server_gdbus_h pkgmgr_server);

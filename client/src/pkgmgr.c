@@ -135,7 +135,6 @@ typedef struct _pkgmgr_client_t {
 	void* new_event_cb;
     void* extension;
 	bool debug_mode;
-	char *pkg_chksum;
 } pkgmgr_client_t;
 
 typedef struct _iter_data {
@@ -1513,7 +1512,6 @@ API pkgmgr_client *pkgmgr_client_new(client_type ctype)
 	/* Manage pc */
 	pc->ctype = ctype;
 	pc->status_type = PKGMGR_CLIENT_STATUS_ALL;
-	pc->pkg_chksum = NULL;
 
 	if (pc->ctype == PC_REQUEST) {
 		pc->info.request.cc = comm_client_new();
@@ -1585,11 +1583,6 @@ API int pkgmgr_client_free(pkgmgr_client *pc)
 	} else {
 		_LOGE("Invalid client type\n");
 		return PKGMGR_R_EINVAL;
-	}
-
-	if (mpc->pkg_chksum) {
-		free(mpc->pkg_chksum);
-		mpc->pkg_chksum = NULL;
 	}
 
 	free(mpc);
@@ -1682,10 +1675,7 @@ API int pkgmgr_client_install(pkgmgr_client * pc, const char *pkg_type,
 	if (mpc->debug_mode) {
 		argv[argcnt++] = strdup("-G");
 	}
-	if (mpc->pkg_chksum) {
-		argv[argcnt++] = strdup("-C");
-		argv[argcnt++] = strdup(mpc->pkg_chksum);
-	}
+
 
 
 	/*** add quote in all string for special charactor like '\n'***   FIX */
@@ -2934,17 +2924,6 @@ API int pkgmgr_client_set_status_type(pkgmgr_client *pc, int status_type)
    }
 
    return PKGMGR_R_OK;
-}
-
-API int pkgmgr_client_set_pkg_chksum(pkgmgr_client *pc, char *pkg_chksum)
-{
-	retvm_if(pc == NULL, PKGMGR_R_EINVAL, "package manager client pc is NULL");
-	retvm_if(pkg_chksum == NULL, PKGMGR_R_EINVAL, "cert value is NULL");
-	pkgmgr_client_t *mpc = (pkgmgr_client_t *) pc;
-
-	mpc->pkg_chksum = strdup(pkg_chksum);
-
-	return PKGMGR_R_OK;
 }
 
 API int pkgmgr_client_set_debug_mode(pkgmgr_client *pc, bool debug_mode)

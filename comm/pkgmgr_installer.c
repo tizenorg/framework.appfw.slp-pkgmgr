@@ -71,7 +71,6 @@ struct pkgmgr_installer {
 		int is_tep_included;
 #endif
 	bool debug_mode;
-	char *pkg_chksum;
 
 	DBusConnection *conn;
 };
@@ -156,7 +155,6 @@ API pkgmgr_installer *pkgmgr_installer_new(void)
 		return ERR_PTR(-ENOMEM);
 
 	pi->request_type = PKGMGR_REQ_INVALID;
-	pi->pkg_chksum = NULL;
 
 	return pi;
 }
@@ -350,11 +348,6 @@ pkgmgr_installer_receive_request(pkgmgr_installer *pi,
 				free(pi->optional_data);
 			pi->optional_data = strndup(optarg, MAX_STRLEN);
 			break;
-		case 'C': /* pkgfile checksum for installer app */
-			if (pi->pkg_chksum)
-				free(pi->pkg_chksum);
-			pi->pkg_chksum = strndup(optarg, MAX_STRLEN);
-			break;
 
 			/* Otherwise */
 		case '?':	/* Not an option */
@@ -426,12 +419,6 @@ API int pkgmgr_installer_is_quiet(pkgmgr_installer *pi)
 	return pi->quiet;
 #endif
 return 1;
-}
-
-API const char *pkgmgr_installer_get_pkg_chksum(pkgmgr_installer *pi)
-{
-	CHK_PI_RET(PKGMGR_REQ_INVALID);
-	return pi->pkg_chksum;
 }
 
 API int pkgmgr_installer_get_move_type(pkgmgr_installer *pi)

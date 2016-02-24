@@ -34,15 +34,15 @@ extern "C" {
 /* Supported options */
 #ifdef _APPFW_FEATURE_MOUNT_INSTALL
 #ifdef _APPFW_FEATURE_EXPANSION_PKG_INSTALL
-const char *short_opts = "k:l:i:d:c:m:t:o:r:p:s:e:M:C:wG";
+const char *short_opts = "k:l:i:d:c:m:t:o:r:p:s:e:M:wG";
 #else
-const char *short_opts = "k:l:i:d:c:m:t:o:r:p:s:C:wG";
+const char *short_opts = "k:l:i:d:c:m:t:o:r:p:s:wG";
 #endif
 #else
 #ifdef _APPFW_FEATURE_EXPANSION_PKG_INSTALL
-const char *short_opts = "k:l:i:d:c:m:t:o:r:p:s:e:M:C:G";
+const char *short_opts = "k:l:i:d:c:m:t:o:r:p:s:e:M:G";
 #else
-const char *short_opts = "k:l:i:d:c:m:t:o:r:p:s:C:G";
+const char *short_opts = "k:l:i:d:c:m:t:o:r:p:s:G";
 #endif
 #endif
 
@@ -66,7 +66,6 @@ const struct option long_opts[] = {
 	{ "tep_move", 1, NULL, 'M'},
 #endif
 	{ "debug-mode", 0, NULL, 'G'},
-	{ "chksum", 1, NULL, 'C'},
 	{ 0, 0, 0, 0 }	/* sentinel */
 };
 

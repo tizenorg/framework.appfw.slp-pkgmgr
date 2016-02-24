@@ -19,20 +19,17 @@
 		</method>
 		<method name="DrmGenerateLicenseRequest">
 			<arg type="s" name="resp_data" direction="in" />
-			<arg type="s" name="cookie" direction="in" />
 			<arg type="s" name="req_data" direction="out" />
 			<arg type="s" name="license_url" direction="out" />
 			<arg type="i" name="ret" direction="out" />
 		</method>
 		<method name="DrmRegisterLicense">
 			<arg type="s" name="resp_data" direction="in" />
-			<arg type="s" name="cookie" direction="in" />
 			<arg type="i" name="ret" direction="out" />
 		</method>
 		<method name="DrmDecryptPackage">
 			<arg type="s" name="drm_file_path" direction="in" />
 			<arg type="s" name="decrypted_file_path" direction="in" />
-			<arg type="s" name="cookie" direction="in" />
 			<arg type="i" name="ret" direction="out" />
 		</method>
 	</interface>

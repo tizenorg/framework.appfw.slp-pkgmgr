@@ -402,39 +402,6 @@ int main(int argc, char **argv)
 int pkgmgr_installer_is_quiet(pkgmgr_installer *pi);
 
 /**
-	@brief		Get checksum value of pkg file
-	@pre		pkgmgr_installer_receive_request() must be called.
-	@post		None
-	@see		pkgmgr_installer_receive_request
-	@param[in]	pi	pkgmgr_installer object
-	@return		Operation result
-	@retval		package checksum value
-	@remark		None
-	@code
-#include <pkgmgr_installer.h>
-int main(int argc, char **argv)
-{
-	pkgmgr_installer *pi;
-	int r = 0;
-
-	pi = pkgmgr_installer_new();
-	if(!pi) return -1;
-	if(pkgmgr_installer_receive_request(pi, argc, argv)) {
-		r = -1;
-		goto CLEANUP_RET;
-	}
-	checksum_value = pkgmgr_installer_get_pkg_chksum(pi);
-
-	//Do Something
-
-	pkgmgr_installer_free(pi);
-	return r;
-}
-	@endcode
- */
-const char *pkgmgr_installer_get_pkg_chksum(pkgmgr_installer *pi);
-
-/**
 	@brief		Get move type
 	@pre		pkgmgr_installer_receive_request() must be called.
 	@post		None
