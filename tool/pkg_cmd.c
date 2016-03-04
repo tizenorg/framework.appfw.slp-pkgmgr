@@ -118,6 +118,7 @@ struct pm_tool_args_t {
 };
 typedef struct pm_tool_args_t pm_tool_args;
 pm_tool_args data;
+char *privilege_err_str = NULL;
 
 static GMainLoop *main_loop = NULL;
 
@@ -214,10 +215,11 @@ static int __return_cb(int req_id, const char *pkg_type,
 		ret_val = atoi(val);
 		data.result = ret_val;
 
-		strtok((char*)val, delims);
-		ret_result = strtok(NULL, delims);
+		ret_result = strstr((char *)val, delims) + 1;
+
 		if (ret_result){
 			extra_str = strdup(ret_result);
+			privilege_err_str = strdup(ret_result);
 			printf("__return_cb req_id[%d] pkg_type[%s] pkgid[%s] key[%s] val[%d] error message: %s\n",
 					   req_id, pkg_type, pkgid, key, ret_val, extra_str);
 			free(extra_str);
@@ -1180,7 +1182,10 @@ int main(int argc, char *argv[])
 		data.result = PKGCMD_ERR_ARGUMENT_INVALID;
 
 	if (ret != 0) {
-		__error_no_to_string(data.result, &errstr);
+		if (ret >= PKGCMD_ERR_PRIVILEGE_UNAUTHORIZED_FAILED && ret <= PKGCMD_ERR_PRIVILEGE_USING_LEGACY_FAILED)
+			errstr = privilege_err_str;
+		else
+			__error_no_to_string(data.result, &errstr);
 		printf("processing result : %s [%d] failed\n", errstr, data.result);
 	} else {
 		if (data.request == INSTALL_REQ)
@@ -1191,6 +1196,11 @@ int main(int argc, char *argv[])
 	gettimeofday(&tv, NULL);
 	endtime = tv.tv_sec * 1000l + tv.tv_usec / 1000l;
 	printf("spend time for pkgcmd is [%d]ms\n", (int)(endtime - starttime));
+
+	if (privilege_err_str) {
+		free(privilege_err_str);
+		privilege_err_str = NULL;
+	}
 
 	return data.result;
 }
